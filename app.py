@@ -6,11 +6,13 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
 from PyQt5.QtCore import Qt, QPoint, QRect, QSize
 from PyQt5.QtGui import QFont, QIcon, QMouseEvent, QPixmap
 from edit_view import EditView
+from script_view import ScriptView
 from menu import MenuBar
 from tip_bar import TipBar
 from side_bar import SideBar
 from my_watches_view import WatchesView
 from common import StackWidget
+#from main_content_area import MainContentArea
 
 app=QApplication(sys.argv)
 
@@ -78,33 +80,60 @@ class MainWindow(QMainWindow):
         view_layout=QVBoxLayout(content_widget)
         content_layout.addLayout(view_layout)
 
-        # 創建主內容區域
+        # 創建主內容區域（使用 MainContentArea 支援分頁標籤）
         self.main_content_area = StackWidget()
         self.side_bar.toggle_view.connect(self.main_content_area.setCurrentIndex)
         self.main_content_area.setObjectName("mainContentArea")
         view_layout.addWidget(self.main_content_area)
 
-        # 預設不顯示任何視圖（顯示空白）
-        empty_widget = QWidget()
-        empty_widget.setObjectName("emptyWidget")
-        self.main_content_area.addWidget(empty_widget)
-        # 創建 My Watches 視圖
-        self.my_watches=WatchesView(signal=self.tip_bar.set_text, scrapbook=self.scrapbook)
-        self.main_content_area.addWidget(self.my_watches,False)
-        self.my_watches.summon_view.connect(
-            lambda obj, data: self.main_content_area.addWidget(
-                EditView(data=data, tip_signal=self.tip_bar.set_text), obj
-            )
-        )
-        
+        self.my_watches = WatchesView(signal=self.tip_bar.set_text, scrapbook=self.scrapbook)
+        self.main_content_area.addWidget(self.my_watches, obj="my_watches", switch=False)
+
+        # 連接 summon_view 信號，開啟編輯視圖時顯示標籤
+        self.my_watches.summon_view.connect(self._on_summon_view)
+
         view_layout.addWidget(self.tip_bar)
 
         # 應用深色主題樣式
         self.apply_dark_theme()
 
-        #使子元件偵測滑鼠移動
+        # 使子元件偵測滑鼠移動
         for child in self.findChildren(QWidget):
             child.setMouseTracking(True)
+
+    def _on_summon_view(self, obj, data):
+        edit_view = EditView(data=data, tip_signal=self.tip_bar.set_text)
+        # 連接腳本編輯器請求信號
+        edit_view.summon_script_view.connect(self._on_summon_script_view)
+        self.main_content_area.addWidget(
+            edit_view,
+            obj=obj,
+            switch=True,
+        )
+
+    def _on_summon_script_view(self, edit_view, container):
+        """處理腳本編輯器請求"""
+        # 建立簡化版 ScriptView
+        script_view = ScriptView(mode="simple")
+        script_view.set_property(container.name, container.input.text())
+
+        # 產生唯一 ID
+        script_view_id = f"script_{id(container)}"
+
+        def on_apply(text):
+            # 寫入容器
+            container.input.setText(text)
+            # 移除 script_view 並切回 edit_view
+            self.main_content_area.removeWidget(script_view)
+            self.main_content_area.setCurrentWidget(edit_view)
+
+        def on_back():
+            # 移除 script_view 並切回 edit_view（不寫入）
+            self.main_content_area.removeWidget(script_view)
+            self.main_content_area.setCurrentWidget(edit_view)
+
+        script_view.set_callbacks(on_apply=on_apply, on_back=on_back)
+        self.main_content_area.addWidget(script_view, obj=script_view_id, switch=True)
 
     def create_title_bar(self):
         self.title_bar = QWidget()

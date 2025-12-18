@@ -9,7 +9,7 @@ COMMON_POSITION = [
     {"name": "rotation", "type": "number", "default": 0, "description": "Rotation angle (0-360)"},  # 旋轉角度
     {"name": "opacity", "type": "number", "default": 100, "description": "Opacity (0-100)"},  # 透明度
     {"name": "alignment", "type": "option", "options": ["cc", "cl", "cr", "tc", "tl", "tr", "bc", "bl", "br"],
-     "default": "cc", "description": "Alignment"},  # 對齊方式
+     "default": "tl", "description": "Alignment"},  # 對齊方式
 ]
 
 # 3D Position (3D 定位屬性)

@@ -564,8 +564,9 @@ class LuaLexer(QsciLexerLua):
 class LuaEditor(QsciScintilla):
     """Lua 程式碼編輯器"""
 
-    # 用戶列表 ID（用於標籤自動完成）
+    # 用戶列表 ID
     TAG_LIST_ID = 1
+    API_LIST_ID = 2
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -573,6 +574,14 @@ class LuaEditor(QsciScintilla):
         # 標籤自動完成狀態
         self._tag_mode = False
         self._tag_start_pos = -1
+
+        # API 自動完成狀態
+        self._api_mode = False
+        self._api_start_pos = -1
+        self._api_word_start = -1
+
+        # 建立 API 關鍵字列表
+        self._api_keywords = self._build_api_keywords()
 
         self.setup_editor()
         self.setup_lexer()
@@ -670,11 +679,14 @@ class LuaEditor(QsciScintilla):
         for action in WATCHMAKER_ACTIONS:
             self.apis.add(action)
 
-        # 準備 API
+        # 準備 API（同步等待完成）
         self.apis.prepare()
 
-        # 設置自動完成
-        self.setAutoCompletionSource(QsciScintilla.AcsAll)
+        # 連接 API 準備完成信號
+        self.apis.apiPreparationFinished.connect(self._on_api_ready)
+
+        # 設置自動完成 - 使用 AcsAPIs 明確指定使用 API
+        self.setAutoCompletionSource(QsciScintilla.AcsAPIs)
         self.setAutoCompletionThreshold(2)
         self.setAutoCompletionCaseSensitivity(False)
         self.setAutoCompletionReplaceWord(True)
@@ -691,6 +703,11 @@ class LuaEditor(QsciScintilla):
         # 自動完成列表顏色
         self.SendScintilla(QsciScintilla.SCI_AUTOCSETMAXHEIGHT, 10)  # 最多顯示 10 項
 
+    def _on_api_ready(self):
+        """API 準備完成時的回調"""
+        # API 準備完成，自動完成現在可用
+        pass
+
     def setup_tag_autocomplete(self):
         """設置標籤自動完成"""
         # 建立標籤自動完成的 API 列表
@@ -704,7 +721,12 @@ class LuaEditor(QsciScintilla):
         self.tag_apis.prepare()
 
     def keyPressEvent(self, event):
-        """攔截按鍵事件以處理標籤自動完成"""
+        """攔截按鍵事件以處理自動完成"""
+        # Ctrl+J 手動觸發自動完成
+        if event.key() == Qt.Key_J and event.modifiers() == Qt.ControlModifier:
+            self._show_api_autocomplete()
+            return
+
         # 檢查是否輸入 {
         if event.text() == '{':
             # 先插入 { 字符
@@ -732,6 +754,66 @@ class LuaEditor(QsciScintilla):
 
         super().keyPressEvent(event)
 
+        # 自動觸發 API 自動完成（輸入字母或數字後）
+        if event.text() and event.text().isalnum() and not self._tag_mode:
+            # 檢查當前單字長度
+            current_pos = self.SendScintilla(QsciScintilla.SCI_GETCURRENTPOS)
+            word_start = self.SendScintilla(QsciScintilla.SCI_WORDSTARTPOSITION, current_pos, True)
+            word_len = current_pos - word_start
+            # 輸入 2 個字符後觸發
+            if word_len >= 2:
+                self._show_api_autocomplete()
+
+    def _build_api_keywords(self):
+        """建立 API 關鍵字列表"""
+        keywords = []
+        # Lua 標準函數
+        keywords.extend([
+            'and', 'break', 'do', 'else', 'elseif', 'end', 'false',
+            'for', 'function', 'goto', 'if', 'in', 'local', 'nil',
+            'not', 'or', 'repeat', 'return', 'then', 'true', 'until', 'while',
+            'print', 'type', 'tonumber', 'tostring', 'pairs', 'ipairs',
+            'next', 'select', 'unpack', 'pcall', 'xpcall', 'error', 'assert',
+            'string.len', 'string.sub', 'string.find', 'string.format',
+            'string.lower', 'string.upper', 'string.rep', 'string.reverse',
+            'math.abs', 'math.ceil', 'math.floor', 'math.max', 'math.min',
+            'math.random', 'math.sin', 'math.cos', 'math.tan', 'math.sqrt',
+            'table.insert', 'table.remove', 'table.sort', 'table.concat',
+        ])
+        # WatchMaker API
+        keywords.extend(WATCHMAKER_API.keys())
+        # Easing 函數
+        keywords.extend(EASING_FUNCTIONS)
+        # 動作
+        keywords.extend(WATCHMAKER_ACTIONS)
+        return sorted(set(keywords))
+
+    def _show_api_autocomplete(self):
+        """顯示 API 自動完成選單"""
+        # 取得當前位置和當前輸入的單字
+        current_pos = self.SendScintilla(QsciScintilla.SCI_GETCURRENTPOS)
+        word_start = self.SendScintilla(QsciScintilla.SCI_WORDSTARTPOSITION, current_pos, True)
+
+        # 取得已輸入的前綴
+        prefix = self.text()[word_start:current_pos].lower() if word_start < current_pos else ""
+
+        # 過濾符合前綴的關鍵字
+        if prefix:
+            filtered = [kw for kw in self._api_keywords if kw.lower().startswith(prefix)]
+        else:
+            filtered = self._api_keywords
+
+        if not filtered:
+            return
+
+        # 記錄狀態
+        self._api_mode = True
+        self._api_start_pos = current_pos
+        self._api_word_start = word_start
+
+        # 顯示選單
+        self.showUserList(self.API_LIST_ID, filtered)
+
     def _show_tag_autocomplete(self):
         """顯示標籤自動完成選單（使用用戶列表）"""
         # 構建標籤列表字串（以空格分隔，用於 showUserList）
@@ -743,31 +825,45 @@ class LuaEditor(QsciScintilla):
 
     def _on_userlist_selected(self, list_id, selected_text):
         """當用戶列表項目被選中時的回調"""
-        # 確認是標籤列表
-        if list_id != self.TAG_LIST_ID:
+        # 處理 API 列表
+        if list_id == self.API_LIST_ID:
+            if not self._api_mode:
+                return
+
+            # 替換已輸入的前綴為選中的關鍵字
+            current_pos = self.SendScintilla(QsciScintilla.SCI_GETCURRENTPOS)
+            self.SendScintilla(QsciScintilla.SCI_SETSEL, self._api_word_start, current_pos)
+            self.SendScintilla(QsciScintilla.SCI_REPLACESEL, 0, selected_text.encode('utf-8'))
+
+            # 重置 API 模式
+            self._api_mode = False
+            self._api_start_pos = -1
+            self._api_word_start = -1
             return
 
-        # 確認是標籤模式且選擇的是有效標籤
-        if not self._tag_mode or selected_text not in WATCHMAKER_TAGS:
+        # 處理標籤列表
+        if list_id == self.TAG_LIST_ID:
+            # 確認是標籤模式且選擇的是有效標籤
+            if not self._tag_mode or selected_text not in WATCHMAKER_TAGS:
+                self._tag_mode = False
+                self._tag_start_pos = -1
+                return
+
+            # 取得實際標籤
+            actual_tag = WATCHMAKER_TAGS[selected_text]
+
+            # 刪除 { 並插入實際標籤
+            # tag_start_pos 是 { 之後的位置，所以 { 的位置是 tag_start_pos - 1
+            delete_start = self._tag_start_pos - 1
+            current_pos = self.SendScintilla(QsciScintilla.SCI_GETCURRENTPOS)
+
+            # 設置選擇範圍並替換
+            self.SendScintilla(QsciScintilla.SCI_SETSEL, delete_start, current_pos)
+            self.SendScintilla(QsciScintilla.SCI_REPLACESEL, 0, actual_tag.encode('utf-8'))
+
+            # 重置標籤模式
             self._tag_mode = False
             self._tag_start_pos = -1
-            return
-
-        # 取得實際標籤
-        actual_tag = WATCHMAKER_TAGS[selected_text]
-
-        # 刪除 { 並插入實際標籤
-        # tag_start_pos 是 { 之後的位置，所以 { 的位置是 tag_start_pos - 1
-        delete_start = self._tag_start_pos - 1
-        current_pos = self.SendScintilla(QsciScintilla.SCI_GETCURRENTPOS)
-
-        # 設置選擇範圍並替換
-        self.SendScintilla(QsciScintilla.SCI_SETSEL, delete_start, current_pos)
-        self.SendScintilla(QsciScintilla.SCI_REPLACESEL, 0, actual_tag.encode('utf-8'))
-
-        # 重置標籤模式
-        self._tag_mode = False
-        self._tag_start_pos = -1
 
     def setup_margins(self):
         """設置邊距（行號）"""
@@ -1001,11 +1097,14 @@ class ScriptView(QWidget):
     return_requested = pyqtSignal()
     script_changed = pyqtSignal(str)  # 當腳本內容改變時
 
-    def __init__(self, parent=None):
+    def __init__(self, mode="full", parent=None):
         super().__init__(parent)
         self.setObjectName("scriptView")
         self.setStyleSheet(load_style())
 
+        self.mode = mode  # "full" 或 "simple"
+        self.on_apply_callback = None
+        self.on_back_callback = None
         self.property_name = ""
         self.original_value = ""
 
@@ -1024,6 +1123,19 @@ class ScriptView(QWidget):
 
         self.setup_ui()
         self.connect_signals()
+
+    def showEvent(self, event):
+        """當視圖顯示時觸發"""
+        super().showEvent(event)
+        # 確保編輯器取得焦點並重新準備自動完成
+        QTimer.singleShot(100, self._init_editor_focus)
+
+    def _init_editor_focus(self):
+        """初始化編輯器焦點和自動完成"""
+        self.editor.setFocus()
+        # 重新準備 API 以確保自動完成正常工作
+        if hasattr(self.editor, 'apis') and self.editor.apis:
+            self.editor.apis.prepare()
 
     def setup_ui(self):
         """設置 UI"""
@@ -1068,6 +1180,10 @@ class ScriptView(QWidget):
         self.api_panel.setFixedWidth(280)
         content_splitter.addWidget(self.api_panel)
 
+        # 簡化模式下隱藏 API 面板
+        if self.mode == "simple":
+            self.api_panel.hide()
+
         layout.addWidget(content_splitter)
 
         # 底部按鈕列
@@ -1087,6 +1203,10 @@ class ScriptView(QWidget):
         self.title_label = QLabel("Lua Script Editor")
         self.title_label.setObjectName("scriptTitle")
         layout.addWidget(self.title_label)
+
+        # 簡化模式下隱藏標題
+        if self.mode == "simple":
+            self.title_label.hide()
 
         layout.addStretch()
 
@@ -1123,11 +1243,25 @@ class ScriptView(QWidget):
         layout = QHBoxLayout(self.button_bar)
         layout.setContentsMargins(15, 0, 15, 0)
 
-        # Return button
+        # Return button (完整模式)
         self.return_btn = QPushButton("Return")
         self.return_btn.setObjectName("returnButton")
         self.return_btn.clicked.connect(self.on_return)
         layout.addWidget(self.return_btn)
+
+        # Back button (簡化模式)
+        self.back_btn = QPushButton("Back")
+        self.back_btn.setObjectName("returnButton")
+        self.back_btn.clicked.connect(self.on_back)
+        layout.addWidget(self.back_btn)
+
+        # 根據模式顯示/隱藏按鈕
+        if self.mode == "simple":
+            self.return_btn.hide()
+            self.back_btn.show()
+        else:
+            self.return_btn.show()
+            self.back_btn.hide()
 
         layout.addStretch()
 
@@ -1136,6 +1270,10 @@ class ScriptView(QWidget):
         self.clear_btn.setObjectName("clearButton")
         self.clear_btn.clicked.connect(self.clear_editor)
         layout.addWidget(self.clear_btn)
+
+        # 簡化模式下隱藏 Clear 按鈕
+        if self.mode == "simple":
+            self.clear_btn.hide()
 
         # Apply button
         self.apply_btn = QPushButton("Apply")
@@ -1318,15 +1456,28 @@ class ScriptView(QWidget):
         self.editor.clear_error_highlights()
         self.output_panel.log_info("Editor cleared")
 
+    def set_callbacks(self, on_apply=None, on_back=None):
+        """設定簡化模式的回調函式"""
+        self.on_apply_callback = on_apply
+        self.on_back_callback = on_back
+
     def apply_script(self):
         """Apply script"""
         script = self.get_script()
-        self.script_changed.emit(script)
-        self.output_panel.log_success("Script applied")
+        if self.mode == "simple" and self.on_apply_callback:
+            self.on_apply_callback(script)
+        else:
+            self.script_changed.emit(script)
+            self.output_panel.log_success("Script applied")
 
     def on_return(self):
         """Return to main view"""
         self.return_requested.emit()
+
+    def on_back(self):
+        """回前頁（簡化模式使用）"""
+        if self.on_back_callback:
+            self.on_back_callback()
 
     def on_text_changed(self):
         """On text changed"""

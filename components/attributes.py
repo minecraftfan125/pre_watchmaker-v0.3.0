@@ -1,3 +1,5 @@
+import os
+
 from .common import (
     COMMON_POSITION,
     COMMON_POSITION_3D,
@@ -13,6 +15,24 @@ from .common import (
     COMMON_ANIM_SCALE,
     COMMON_PROTECTED,
 )
+
+# ============================================================================
+# Font Options (從 font 資料夾動態載入)
+# ============================================================================
+def _load_font_options():
+    """從 font 資料夾載入可用字型列表（包含 TTF/OTF 向量字型和 FNT 點陣圖字型）"""
+    font_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "font")
+    fonts = []
+    if os.path.exists(font_dir):
+        for filename in os.listdir(font_dir):
+            if filename.lower().endswith(('.ttf', '.otf', '.fnt')):
+                # 去除副檔名
+                font_name = os.path.splitext(filename)[0]
+                fonts.append(font_name)
+    fonts.sort()
+    return fonts if fonts else ["Roboto-Regular"]
+
+FONT_OPTIONS = _load_font_options()
 
 # ============================================================================
 # Component Attributes (元件屬性定義)
@@ -37,7 +57,7 @@ text = [
     *COMMON_TRANSFORM,
     {"name": "text", "type": "text", "default": "{dh}:{dmz}", "description": "Text content (supports tags and expressions)"},  # 文字內容
     {"name": "text_size", "type": "number", "default": 40, "description": "Font size (pixels)"},  # 字體大小
-    {"name": "font", "type": "text", "default": "Roboto-Regular", "description": "Font name"},  # 字體名稱
+    {"name": "font", "type": "option", "options": FONT_OPTIONS, "default": "Roboto-Regular", "description": "Font name"},  # 字體名稱
     {"name": "transform", "type": "option", "options": ["n", "u", "l", "c"],
      "default": "n", "description": "Text transform (n=none, u=uppercase, l=lowercase, c=capitalize)"},  # 文字變換
     *COMMON_COLOR,
@@ -59,7 +79,7 @@ text_animation = [
     *COMMON_TRANSFORM,
     {"name": "text", "type": "text", "default": "Hello", "description": "Text content"},  # 文字內容
     {"name": "text_size", "type": "number", "default": 40, "description": "Font size"},  # 字體大小
-    {"name": "font", "type": "text", "default": "Roboto-Regular", "description": "Font name"},  # 字體名稱
+    {"name": "font", "type": "option", "options": FONT_OPTIONS, "default": "Roboto-Regular", "description": "Font name"},  # 字體名稱
     {"name": "transform", "type": "option", "options": ["n", "u", "l", "c"], "default": "n", "description": "Text transform"},  # 文字變換
     *COMMON_COLOR,
     # Animation properties (動畫屬性)
@@ -91,7 +111,7 @@ text_curved = [
     *COMMON_POSITION,
     {"name": "text", "type": "text", "default": "Curved Text", "description": "Text content"},  # 文字內容
     {"name": "text_size", "type": "number", "default": 30, "description": "Font size"},  # 字體大小
-    {"name": "font", "type": "text", "default": "Roboto-Regular", "description": "Font name"},  # 字體名稱
+    {"name": "font", "type": "option", "options": FONT_OPTIONS, "default": "Roboto-Regular", "description": "Font name"},  # 字體名稱
     {"name": "transform", "type": "option", "options": ["n", "u", "l", "c"], "default": "n", "description": "Text transform"},  # 文字變換
     {"name": "radius", "type": "number", "default": 150, "description": "Curve radius"},  # 曲線半徑
     {"name": "curve_dir", "type": "option", "options": ["Up", "Down"], "default": "Up", "description": "Curve direction"},  # 曲線方向
@@ -108,7 +128,7 @@ text_ring = [
     {"name": "name", "type": "text", "default": "Text Ring", "description": "Layer name"},  # 圖層名稱
     *COMMON_POSITION,
     {"name": "text_size", "type": "number", "default": 30, "description": "Font size"},  # 字體大小
-    {"name": "font", "type": "text", "default": "Roboto-Regular", "description": "Font name"},  # 字體名稱
+    {"name": "font", "type": "option", "options": FONT_OPTIONS, "default": "Roboto-Regular", "description": "Font name"},  # 字體名稱
     {"name": "transform", "type": "option", "options": ["n", "u", "l", "c"], "default": "n", "description": "Text transform"},  # 文字變換
     {"name": "radius", "type": "number", "default": 200, "description": "Ring radius"},  # 環形半徑
     {"name": "ring_type", "type": "option",
@@ -166,7 +186,7 @@ image_cutout = [
     {"name": "path", "type": "text", "default": "", "description": "Image path"},  # 圖片路徑
     {"name": "text", "type": "text", "default": "Text", "description": "Mask text"},  # 遮罩文字
     {"name": "text_size", "type": "number", "default": 50, "description": "Font size"},  # 字體大小
-    {"name": "font", "type": "text", "default": "Roboto-Bold", "description": "Font name"},  # 字體名稱
+    {"name": "font", "type": "option", "options": FONT_OPTIONS, "default": "Roboto-Bold", "description": "Font name"},  # 字體名稱
     {"name": "transform", "type": "option", "options": ["n", "u", "l", "c"], "default": "n", "description": "Text transform"},  # 文字變換
     *COMMON_DISPLAY,
 ]
@@ -360,7 +380,7 @@ tachy = [
     {"name": "speeds", "type": "text", "default": "400,300,240,200,180,160,140,120,110,100,95,90,85,80,75,70,65,60",
      "description": "Speed values (comma separated)"},  # 速度值
     {"name": "text_size", "type": "number", "default": 25, "description": "Font size"},  # 字體大小
-    {"name": "font", "type": "text", "default": "Roboto-Regular", "description": "Font name"},  # 字體名稱
+    {"name": "font", "type": "option", "options": FONT_OPTIONS, "default": "Roboto-Regular", "description": "Font name"},  # 字體名稱
     {"name": "transform", "type": "option", "options": ["n", "u", "l"], "default": "n", "description": "Text transform"},  # 文字變換
     {"name": "rotated_text", "type": "option", "options": ["ru", "rd", "n"], "default": "ru", "description": "Text rotation"},  # 文字旋轉
     {"name": "squarify", "type": "option", "options": ["0", "1"], "default": "0", "description": "Squarify"},  # 方形化
@@ -385,10 +405,10 @@ series = [
     {"name": "current_pos", "type": "option", "options": ["t", "m", "b"], "default": "m", "description": "Current position (t=top, m=middle, b=bottom)"},  # 當前值位置
     {"name": "spacing", "type": "number", "default": 10, "description": "Spacing"},  # 間距
     {"name": "text_size", "type": "number", "default": 40, "description": "Current value font size"},  # 當前值字體大小
-    {"name": "font", "type": "text", "default": "Roboto-Bold", "description": "Current value font"},  # 當前值字體
+    {"name": "font", "type": "option", "options": FONT_OPTIONS, "default": "Roboto-Bold", "description": "Current value font"},  # 當前值字體
     {"name": "color", "type": "color", "default": "ffffff", "description": "Current value color"},  # 當前值顏色
     {"name": "text_size2", "type": "number", "default": 30, "description": "Other values font size"},  # 其他值字體大小
-    {"name": "font2", "type": "text", "default": "Roboto-Regular", "description": "Other values font"},  # 其他值字體
+    {"name": "font2", "type": "option", "options": FONT_OPTIONS, "default": "Roboto-Regular", "description": "Other values font"},  # 其他值字體
     {"name": "color2", "type": "color", "default": "888888", "description": "Other values color"},  # 其他值顏色
     {"name": "transform", "type": "option", "options": ["n", "u", "l"], "default": "n", "description": "Text transform"},  # 文字變換
     *COMMON_DISPLAY,
@@ -447,7 +467,7 @@ text_3d = [
     *COMMON_POSITION_3D,
     {"name": "text", "type": "text", "default": "3D", "description": "Text content"},  # 文字內容
     {"name": "text_size", "type": "number", "default": 100, "description": "Font size"},  # 字體大小
-    {"name": "font", "type": "text", "default": "Roboto-Bold", "description": "Font name"},  # 字體名稱
+    {"name": "font", "type": "option", "options": FONT_OPTIONS, "default": "Roboto-Bold", "description": "Font name"},  # 字體名稱
     {"name": "scale_x", "type": "number", "default": 100, "description": "X-axis scale"},  # X 軸縮放
     {"name": "scale_y", "type": "number", "default": 100, "description": "Y-axis scale"},  # Y 軸縮放
     {"name": "scale_z", "type": "number", "default": 100, "description": "Z-axis scale"},  # Z 軸縮放
@@ -575,6 +595,8 @@ def get_shader_params(shader_type):
 
 
 __all__ = [
+    # Font options
+    'FONT_OPTIONS',
     # Component types
     'group',
     'text',

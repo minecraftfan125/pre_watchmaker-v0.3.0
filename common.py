@@ -6,50 +6,6 @@ import os
 def get_data(obj):
     return ""
 
-def Dragable(cls):
-    original_mousePress = cls.mousePressEvent
-    original_mouseMove = cls.mouseMoveEvent
-    original_mouseRelease = cls.mouseReleaseEvent
-
-    def mousePressEvent(self,event):
-        if event.button() == Qt.LeftButton:
-            self.drag_start_position = event.pos()
-
-    def mouseMoveEvent(self,event):
-        original_mouseMove(self,event)
-        if not (event.buttons() & Qt.LeftButton):
-            return
-        if self.drag_start_position is None:
-            return
-        # 检查移动距离是否超过启动拖拽的阈值
-        if (event.pos() - self.drag_start_position).manhattanLength() < 5:
-            return
-        # 创建拖拽对象
-        drag = QDrag(self)
-        mime_data = QMimeData()
-        # 存储组件信息（tooltip）
-        mime_data.setText(self.name)
-        drag.setMimeData(mime_data)
-        self.signal.emit(self.name)
-        # 执行拖拽
-        result=drag.exec_(Qt.CopyAction)
-        if result==Qt.IgnoreAction:
-            self.signal.emit("drop")
-        # 重置拖拽起始位置
-        self.drag_start_position = None
-        self.draged=True
-
-    def mouseReleaseEvent(self, event):
-        original_mouseRelease(self,event)
-        if self.draged is False:
-            original_mousePress(self,event)
-            self.draged=False
-
-    cls.mousePressEvent=mousePressEvent
-    cls.mouseMoveEvent=mouseMoveEvent
-    cls.mouseReleaseEvent=mouseReleaseEvent
-    return cls
-
 class FlowLayout(QLayout):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -286,7 +242,7 @@ class WatchFaceText(QLabel):
         if self._font_name:
             self.set_font(self._font_name, size)
         else:
-            font = self.font()
+            font = QLabel.font(self)  # 使用 QLabel.font() 避免被子類覆蓋
             font.setPointSize(size)
             super().setFont(font)
 
@@ -462,3 +418,6 @@ class StackWidget(QStackedWidget):
                 new_correspond.append(i)
         self.correspond=dict(new_correspond)
         return super().removeWidget(widget)
+    
+    def find(self,obj):
+        return self.correspond.get(obj,False)

@@ -4,9 +4,9 @@ A desktop application for creating and editing WatchMaker watch faces, built wit
 
 ## Features
 
-### Current Version
+### Current Version (v0.3.0)
 
-#### Lua Script Editor (New)
+#### Lua Script Editor
 A fully-featured Lua script editor for WatchMaker watch face scripting:
 
 - **Syntax Highlighting**: Full Lua syntax highlighting with dark theme support
@@ -20,8 +20,7 @@ A fully-featured Lua script editor for WatchMaker watch face scripting:
 - **Undo/Redo Support**: Full undo/redo history
 - **API Reference Panel**: Quick reference for WatchMaker Lua API with examples
 - **Output Panel**: Real-time feedback for syntax errors and warnings
-
-**Note**: Currently, the Lua editor can only be launched via `script_view.py` directly. Integration with the main application will be completed in the next version.
+- **Application Integration**: Lua editor is now fully integrated with the main application
 
 #### Main Application
 - Frameless window with custom title bar
@@ -29,10 +28,15 @@ A fully-featured Lua script editor for WatchMaker watch face scripting:
 - Side navigation bar
 - "My Watches" view for managing watch faces
 
+#### Component Architecture
+- Established base component structure for all UI elements
+- Component base classes and inheritance hierarchy
+- Standardized component communication patterns
+
 ### Planned Features (Next Version)
-- Integration of Lua Script Editor with the main application
-- Component button functionality implementation
-- Watch face preview
+- UI interaction logic implementation for the main application
+- Full implementation of all confirmed component features
+- Watch face preview functionality
 
 ## Requirements
 
@@ -107,7 +111,13 @@ This project is currently in development.
 
 ## Changelog
 
-### v0.2.0 (Current)
+### v0.3.0 (Current)
+- Integrated Lua Script Editor with the main application
+- Established base component architecture for all UI elements
+- Implemented component base classes and inheritance hierarchy
+- Standardized component communication patterns
+
+### v0.2.0
 - Added Lua Script Editor with full syntax highlighting
 - Implemented WatchMaker API autocomplete
 - Added tag autocomplete system with descriptions

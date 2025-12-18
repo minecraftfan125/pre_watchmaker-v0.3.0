@@ -4,12 +4,12 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QGridLayout, QTreeWidget, QTreeWidgetItem,
                              QStackedWidget, QListWidget, QListWidgetItem,
                              QLineEdit, QComboBox, QColorDialog)
-from PyQt5.QtCore import Qt, QPoint, QMimeData, pyqtSignal, QSize, QThread, QTimer, QEvent, QRect, QPropertyAnimation, QEasingCurve
+from PyQt5.QtCore import Qt, QPoint, QMimeData, pyqtSignal, QSize, QThread, QTimer, QEvent, QRect, QPropertyAnimation, QEasingCurve, QObject
 from PyQt5.QtGui import QPixmap, QIcon, QDrag, QCursor, QColor
 from script_view import ScriptView
-from common import FlowLayout, WatchFaceText, Dragable, StackWidget
+from common import FlowLayout, WatchFaceText, StackWidget
 import components
-
+from summon_obj import *
 
 def load_style():
     """載入編輯視圖樣式"""
@@ -21,6 +21,54 @@ def load_style():
         print(f"Warning: Style file not found: {style_path}")
         return ""
 
+def Dragable(cls):
+    original_mousePress = cls.mousePressEvent
+    original_mouseMove = cls.mouseMoveEvent
+    original_mouseRelease = cls.mouseReleaseEvent
+
+    cls.drag_start_position = None
+    cls.draged=False
+
+    def mousePressEvent(self,event):
+        if event.button() == Qt.LeftButton:
+            self.drag_start_position = event.pos()
+
+    def mouseMoveEvent(self,event):
+        original_mouseMove(self,event)
+        if not (event.buttons() & Qt.LeftButton):
+            return
+        if self.drag_start_position is None:
+            return
+        # 检查移动距离是否超过启动拖拽的阈值
+        if (event.pos() - self.drag_start_position).manhattanLength() < 5:
+            return
+        # 创建拖拽对象
+        self.come_from=True
+        drag = QDrag(self)
+        mime_data = QMimeData()
+        # 存储组件信息（tooltip）
+        mime_data.setText(self.name)
+        drag.setMimeData(mime_data)
+        self.signal.emit(self.name,self.attributes)
+        # 执行拖拽
+        result=drag.exec_(Qt.CopyAction)
+        if result is result:
+            self.signal.emit(self.name,"drop")
+        # 重置拖拽起始位置
+        self.drag_start_position = None
+        self.draged=True
+
+    def mouseReleaseEvent(self, event):
+        if self.draged is False:
+            original_mousePress(self,event)
+            self.draged=False
+        original_mouseRelease(self,event)
+
+    cls.mousePressEvent=mousePressEvent
+    cls.mouseMoveEvent=mouseMoveEvent
+    cls.mouseReleaseEvent=mouseReleaseEvent
+    return cls
+
 @Dragable
 class ComponentButton(QPushButton):
     """組件按鈕類，支持拖拽"""
@@ -30,13 +78,8 @@ class ComponentButton(QPushButton):
         self.setFixedSize(60, 60)
         self.setToolTip(tooltip_text)
         self.image_path = image_path
-        self.tooltip_text = tooltip_text
-        self.name="def_"+tooltip_text.replace(' ', '_') if name is None else name
+        self.name=tooltip_text.replace(' ', '_') if name is None else name
         self.signal=signal
-
-        # 拖拽相关属性
-        self.drag_start_position = None
-        self.draged=False
 
         # 載入圖片並設置為按鈕圖示
         if os.path.exists(image_path):
@@ -47,13 +90,19 @@ class ComponentButton(QPushButton):
             self.setIcon(icon)
             self.setIconSize(scaled_pixmap.size())
 
+    def get_attribute(self):
+        return self.attributes
+
     def mouseMoveEvent(self, event):
         super().mouseMoveEvent(event)
-        event.ignore()
+        if not hasattr(self,"attributes"):
+            self.attributes=getattr(components,self.name)
 
     def mousePressEvent(self, event):
         super().mousePressEvent(event)
-        self.signal.emit("summon_"+self.name[4:])
+        if not hasattr(self,"attributes"):
+            self.attributes=getattr(components,self.name)
+        self.signal.emit(self.name,self.attributes)
 
 def _generate_tooltip(filename):
     """從文件名生成 tooltip 文字"""
@@ -199,7 +248,7 @@ class Exploror(QTreeWidget):
     def dragMoveEvent(self, event):
         """拖拽移動時更新"""
         super().dragMoveEvent(event)
-        event.ignore()
+        
 
     def dragLeaveEvent(self, event):
         """拖拽離開時重置"""
@@ -213,14 +262,19 @@ class Exploror(QTreeWidget):
         return event.pos(), QSize(60, 60)
 
 class WatchPreview(QWidget):
-    def __init__(self,data=None, signal=None,parent=None):
+    select=pyqtSignal(object)
+    summon=pyqtSignal(object,object,object)
+    receive=pyqtSignal(object,object)
+
+    def __init__(self,data=None,parent=None):
         super().__init__(parent)
         self.scale=[]
+        self.hash_table={}
         self.face_img=QPixmap("img/edit/watch_base.png")
         self.face=QLabel()
         self.face.setMinimumSize(200,200)
         self.setAcceptDrops(True)
-        self.send_all=signal
+        self.receive.connect(self.show_component)
         self.set_ui()
 
     def set_ui(self):
@@ -230,6 +284,17 @@ class WatchPreview(QWidget):
         face_layout.setAlignment(Qt.AlignCenter)
         face_layout.addWidget(self.face)
         self.override=OverrideWidget("drop here\nadd new item","img/edit/view_drag.png",self)
+
+    def show_component(self,obj,hash_id):
+        obj.setParent(self)
+        obj.installEventFilter(self)
+        self.hash_table[obj]=hash_id
+        obj.show()
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.MouseButtonPress:
+            self.select.emit(self.hash_table[watched])
+        return False
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -254,24 +319,21 @@ class WatchPreview(QWidget):
             self.is_drag_over = True
             self.override.hide()
 
-    def dragMoveEvent(self, event):
-        """拖拽移動時更新"""
-        super().dragMoveEvent(event)
-        event.ignore()
-
     def dragLeaveEvent(self, event):
         """拖拽離開時重置"""
         self.is_drag_over = False
         self.override.show()
 
     def dropEvent(self, event):
+        self.summon.emit(event.mimeData().text(),event.pos(),0)
         self.override.hide()
 
     def required_visual_effects(self, event):
         return event.pos(), QSize(60, 60)
 
 class ComponentPanel(QScrollArea):
-    component_signal=pyqtSignal()
+    add_component=pyqtSignal(object,object)
+    button_trigger=pyqtSignal(object,object)
     def __init__(self,data=None, signal=None,parent=None):
         super().__init__(parent)
         self.data=data
@@ -285,17 +347,16 @@ class ComponentPanel(QScrollArea):
             QSizePolicy.Preferred    # height（非 Expanding）
         )
         self.setMaximumWidth(440)
-        self.send_all=signal
         self.set_ui()
 
     def set_ui(self):
         # 創建內部容器 widget
         self.content_widget = QWidget()
         self.content_widget.setObjectName("componentsContent")
-        buttons_layout = FlowLayout(self.content_widget)
-        buttons = _create_component_buttons(self, self.send_all, self.data)
+        self.buttons_layout = FlowLayout(self.content_widget)
+        buttons = _create_component_buttons(self, self.button_trigger, self.data)
         for btn in buttons:
-            buttons_layout.addWidget(btn)
+            self.buttons_layout.addWidget(btn)
         self.setWidget(self.content_widget)
         self.override = OverrideWidget("drop here\nadd new item", "img/edit/com_drag.png", self)
         
@@ -313,7 +374,7 @@ class ComponentPanel(QScrollArea):
     def dragMoveEvent(self, event):
         """拖拽移動時更新"""
         super().dragMoveEvent(event)
-        event.ignore()
+        event.acceptProposedAction()
 
     def dragLeaveEvent(self, event):
         """拖拽離開時重置"""
@@ -325,251 +386,287 @@ class ComponentPanel(QScrollArea):
 
     def required_visual_effects(self, event):
         return event.pos(), QSize(60, 60)
+    
+class AttributeLayout(QVBoxLayout):
+    class Container(QWidget):
+        """單個屬性容器 - 儲存並顯示一個 attribute 值"""
+        tip_signal = pyqtSignal(str)  # 發送 description 到 TipBar
+        value_changed = pyqtSignal(object)  # (name, value) 值變更信號
+        open_script_editor = pyqtSignal(object)  # 開啟腳本編輯器信號（傳遞 container 自身）
 
-class AttributeContainer(QWidget):
-    """單個屬性容器 - 儲存並顯示一個 attribute 值"""
-    tip_signal = pyqtSignal(str)  # 發送 description 到 TipBar
-    value_changed = pyqtSignal(str, object)  # (name, value) 值變更信號
+        def __init__(self, attr_config, parent=None):
+            super().__init__(parent)
+            self.row_layout=QHBoxLayout(self)
+            self.row_layout.setContentsMargins(0, 2, 0, 2)
+            self.row_layout.setSpacing(8)
+            self.attr_config = attr_config
+            self.name = attr_config.get("name", "")
+            self.attr_type = attr_config.get("type", "text")
+            self.default = attr_config.get("default", "")
+            self.description = attr_config.get("description", "")
+            self.options = attr_config.get("options", [])
+            self._value = self.default
+            self._create_ui()
 
-    def __init__(self, attr_config, parent=None):
-        """
-        attr_config: dict with keys: name, type, default, description, options (optional)
-        """
-        super().__init__(parent)
-        self.attr_config = attr_config
-        self.name = attr_config.get("name", "")
-        self.attr_type = attr_config.get("type", "text")
-        self.default = attr_config.get("default", "")
-        self.description = attr_config.get("description", "")
-        self.options = attr_config.get("options", [])
+        def copy(self):
+            return AttributeLayout.Container(self.attr_config)
 
-        self._value = self.default
-        self._create_ui()
+        def _create_ui(self):
+            self.left = QLabel(self.name)
+            self.left.setObjectName("attrLabel")
+            self.left.setFixedWidth(80)
 
-    def _create_ui(self):
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(5, 2, 5, 2)
-        layout.setSpacing(8)
+            # 根據 type 建立對應 UI
+            if self.attr_type == "text":
+                self._create_text_ui()
+            elif self.attr_type == "number":
+                self._create_number_ui()
+            elif self.attr_type == "option":
+                self._create_option_ui()
+            elif self.attr_type == "color":
+                self._create_color_ui()
+            else:
+                self._create_text_ui()
 
-        # 屬性名稱標籤
-        self.label = QLabel(self.name)
-        self.label.setObjectName("attrLabel")
-        self.label.setMinimumWidth(100)
-        layout.addWidget(self.label)
+            # 統一設定 right 控件的大小策略
+            self.right.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
-        # 根據 type 建立對應 UI
-        if self.attr_type == "text":
-            self._create_text_ui(layout)
-        elif self.attr_type == "number":
-            self._create_number_ui(layout)
-        elif self.attr_type == "option":
-            self._create_option_ui(layout)
-        elif self.attr_type == "color":
-            self._create_color_ui(layout)
-        else:
-            self._create_text_ui(layout)  # fallback
+            self.row_layout.addWidget(self.left)
+            self.row_layout.addWidget(self.right, 1)  # stretch factor = 1
 
-    def _create_text_ui(self, layout):
-        self.input = QLineEdit()
-        self.input.setObjectName("attrInput")
-        self.input.setText(str(self.default))
-        self.input.textChanged.connect(self._on_text_changed)
-        layout.addWidget(self.input, 1)
+        def _create_text_ui(self):
+            self.right = QLineEdit()
+            self.right.setObjectName("attrInput")
+            self.right.setText(str(self.default))
+            self.right.textChanged.connect(self._on_text_changed)
+            self.right.setAcceptDrops(False)
 
-    def _create_number_ui(self, layout):
-        self.input = QLineEdit()
-        self.input.setObjectName("attrInput")
-        self.input.setText(str(self.default))
-        self.input.textChanged.connect(self._on_text_changed)
-        layout.addWidget(self.input, 1)
+        def _create_number_ui(self):
+            self.right = QWidget()
+            right_layout = QHBoxLayout(self.right)
+            right_layout.setContentsMargins(0, 0, 0, 0)
+            right_layout.setSpacing(4)
 
-        # >_ 按鈕（目前無功能）
-        self.script_btn = QPushButton(">_")
-        self.script_btn.setObjectName("scriptButton")
-        self.script_btn.setFixedSize(30, 25)
-        layout.addWidget(self.script_btn)
+            self.input = QLineEdit()
+            self.input.setObjectName("attrInput")
+            self.input.setText(str(self.default))
+            self.input.textChanged.connect(self._on_text_changed)
+            self.input.setAcceptDrops(False)
+            right_layout.addWidget(self.input, 1)
 
-    def _create_option_ui(self, layout):
-        self.combo = QComboBox()
-        self.combo.setObjectName("attrCombo")
-        self.combo.addItems([str(opt) for opt in self.options])
+            self.script_btn = QPushButton(">_")
+            self.script_btn.setObjectName("scriptButton")
+            self.script_btn.setFixedSize(30, 25)
+            self.script_btn.clicked.connect(lambda: self.open_script_editor.emit(self))
+            right_layout.addWidget(self.script_btn)
 
-        # 設定預設值
-        index = self.combo.findText(str(self.default))
-        if index >= 0:
-            self.combo.setCurrentIndex(index)
+        def _create_option_ui(self):
+            self.right = QComboBox()
+            self.right.setObjectName("attrCombo")
+            self.right.addItems([str(opt) for opt in self.options])
+            index = self.right.findText(str(self.default))
+            if index >= 0:
+                self.right.setCurrentIndex(index)
+            self.right.currentTextChanged.connect(self._on_combo_changed)
+            # 禁用滾輪，避免意外改變選項
+            self.right.wheelEvent = lambda e: e.ignore()
 
-        self.combo.currentTextChanged.connect(self._on_combo_changed)
-        layout.addWidget(self.combo, 1)
+        def _create_color_ui(self):
+            self.right = QWidget()
+            right_layout = QHBoxLayout(self.right)
+            right_layout.setContentsMargins(0, 0, 0, 0)
+            right_layout.setSpacing(4)
 
-    def _create_color_ui(self, layout):
-        # 色塊按鈕
-        self.color_btn = QPushButton()
-        self.color_btn.setObjectName("colorButton")
-        self.color_btn.setFixedSize(50, 25)
-        self._current_color = QColor(f"#{self.default}") if self.default else QColor("#ffffff")
-        self._update_color_button()
-        self.color_btn.clicked.connect(self._on_color_clicked)
-        layout.addWidget(self.color_btn)
-
-        # 文字輸入框
-        self.input = QLineEdit()
-        self.input.setObjectName("attrInput")
-        self.input.setText(str(self.default))
-        self.input.textChanged.connect(self._on_color_text_changed)
-        layout.addWidget(self.input, 1)
-
-    def _update_color_button(self):
-        self.color_btn.setStyleSheet(
-            f"background-color: {self._current_color.name()}; border: 1px solid #4d4d4d;"
-        )
-
-    def _on_text_changed(self, text):
-        self._value = text
-        self.value_changed.emit(self.name, text)
-
-    def _on_combo_changed(self, text):
-        self._value = text
-        self.value_changed.emit(self.name, text)
-
-    def _on_color_clicked(self):
-        color = QColorDialog.getColor(self._current_color, self, "選擇顏色")
-        if color.isValid():
-            self._current_color = color
+            self.color_btn = QPushButton()
+            self.color_btn.setObjectName("colorButton")
+            self.color_btn.setFixedSize(50, 25)
+            self._current_color = QColor(f"#{self.default}") if self.default else QColor("#ffffff")
             self._update_color_button()
-            # 去除 # 符號，只保留 6 位色碼
-            hex_color = color.name()[1:]
-            self.input.setText(hex_color)
-            self._value = hex_color
-            self.value_changed.emit(self.name, hex_color)
+            self.color_btn.clicked.connect(self._on_color_clicked)
+            right_layout.addWidget(self.color_btn)
 
-    def _on_color_text_changed(self, text):
-        self._value = text
-        # 嘗試更新色塊
-        try:
-            color = QColor(f"#{text}" if not text.startswith("#") else text)
+            self.input = QLineEdit()
+            self.input.setObjectName("attrInput")
+            self.input.setText(str(self.default))
+            self.input.textChanged.connect(self._on_color_text_changed)
+            self.input.setAcceptDrops(False)
+            right_layout.addWidget(self.input, 1)
+
+        def _update_color_button(self):
+            self.color_btn.setStyleSheet(
+                f"background-color: {self._current_color.name()}; border: 1px solid #4d4d4d;"
+            )
+
+        def _on_text_changed(self, text):
+            self._value = text
+            self.attr_config["default"]=text
+            self.value_changed.emit(text)
+
+        def _on_combo_changed(self, text):
+            self._value = text
+            self.attr_config["default"]=text
+            self.value_changed.emit(text)
+
+        def _on_color_clicked(self):
+            color = QColorDialog.getColor(self._current_color, self, "選擇顏色")
             if color.isValid():
                 self._current_color = color
                 self._update_color_button()
-        except:
-            pass
-        self.value_changed.emit(self.name, text)
+                # 去除 # 符號，只保留 6 位色碼
+                hex_color = color.name()[1:]
+                self.input.setText(hex_color)
+                self._value = hex_color
+                self.value_changed.emit( hex_color)
 
-    def get_value(self):
-        return self._value
-
-    def set_value(self, value):
-        self._value = value
-        if self.attr_type == "option":
-            index = self.combo.findText(str(value))
-            if index >= 0:
-                self.combo.setCurrentIndex(index)
-        elif self.attr_type == "color":
-            self.input.setText(str(value))
+        def _on_color_text_changed(self, text):
+            self._value = text
+            self.attr_config["default"]=text
+            # 嘗試更新色塊
             try:
-                self._current_color = QColor(f"#{value}")
-                self._update_color_button()
+                color = QColor(f"#{text}" if not text.startswith("#") else text)
+                if color.isValid():
+                    self._current_color = color
+                    self._update_color_button()
             except:
                 pass
-        else:
-            self.input.setText(str(value))
+            self.value_changed.emit( text)
 
-    def enterEvent(self, event):
-        super().enterEvent(event)
-        self.tip_signal.emit(self.description)
+        def get_value(self):
+            return self._value
+        
+        def valid(self,text):
+            try:
+                text=str(text)
+            except:
+                return self._value
 
-    def leaveEvent(self, event):
-        super().leaveEvent(event)
-        self.tip_signal.emit("")
+            if text==self._value:
+                return self._value
+            
+            return text
 
-class StorageLayout(QVBoxLayout):
-    def __init__(self,parent=None):
+        def set_value(self, value):
+            if self._value == self.valid(value):
+                return
+            self._value = value
+            if self.attr_type == "option":
+                index = self.right.findText(str(value))
+                if index >= 0:
+                    self.right.setCurrentIndex(index)
+            elif self.attr_type == "color":
+                self.input.setText(str(value))
+                try:
+                    self._current_color = QColor(f"#{value}")
+                    self._update_color_button()
+                except:
+                    pass
+            elif self.attr_type == "number":
+                self.input.setText(str(value))
+            else:
+                # text type - self.right is QLineEdit
+                self.right.setText(str(value))
+
+        def enterEvent(self, event):
+            super().enterEvent(event)
+            self.tip_signal.emit(self.description)
+
+        def leaveEvent(self, event):
+            super().leaveEvent(event)
+            self.tip_signal.emit("")
+
+    def __init__(self, componet_type , parent=None):
         super().__init__(parent)
-        self.storage=[]
+        self.data={}
+        self.component_type=componet_type
+        self.setContentsMargins(10,20,10,20)
+        self.setSpacing(0)
+        self.item=[]
+        
+    def addWidget(self, widget):
+        super().addWidget(widget)
+        self.data[widget.attr_config["name"]]=widget.get_value()
+        self.item.append(widget)
 
-    def addWidget(self, a0):
-        super().addWidget(a0)
-        self.storage.append(a0)
+    def summon(self):
+        new=components_factory(*self.pack())
+        for obj in self.item:
+            new.connect(obj.name,obj.value_changed,obj.set_value)
+            obj.value_changed.emit(obj.get_value())
+        return new
+
+    def pack(self):
+        return (self.component_type,self.data)
 
 class AttributePanal(StackWidget):
+    def_widget=pyqtSignal(object,object)
+    summon_widget=pyqtSignal(object,object,object)
+    delect_widget=pyqtSignal(object,object)
+    send_obj=pyqtSignal(object,object)
+    request_script_editor=pyqtSignal(object)  # 轉發 container 的腳本編輯器請求
     def __init__(self, data=None, signal=None, tip_signal=None, parent=None):
         super().__init__(parent)
         self.override=OverrideWidget("drop here\nset preset value","img/edit/att_drag.png",self)
         self.setAcceptDrops(True)
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
-        self.send_all=signal
-        self.send_all.connect(self.signal_manager)
+        self.summon_widget.connect(self.copy_widget)
+        self.def_widget.connect(self.create_widget)
         self.tip_signal=tip_signal
         self.addWidget(QWidget())
 
-    def signal_manager(self,state=None):
-        if isinstance(state,str):
-            if state.startswith("def_"):
-                component_type = state.replace("def_", "")
-                self.create_defwidget(component_type)
-            if state.startswith("summon_"):
-                self.create_widget(component_type[7:])
-
-    def create_defwidget(self, component_type):
-        result = self.correspond.get("def_" + component_type, False)
-        if result:
+    def copy_widget(self,com_type,pos,hash_id):
+        widget=self.find(hash_id)
+        if widget:
+            self.setCurrentWidget(widget)
             return
-        attributes = getattr(components, component_type)
+        copy=self.find(com_type)
+        copy=copy.widget()
+        new=QScrollArea()
+        new.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        new.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        new.setWidgetResizable(True)
+        new.setObjectName("attrScroll")
+        container=QWidget()
+        container.setObjectName("attrWidget")
+        new.setWidget(container)
+        attributes_layout=AttributeLayout(com_type,container)
+        l=copy.layout()
+        for idx in range(l.count()):
+            item=l.itemAt(idx).widget()
+            copy_item=item.copy()
+            # 連接 number 類型的腳本編輯器信號
+            if copy_item.attr_type == "number":
+                copy_item.open_script_editor.connect(self.request_script_editor.emit)
+            if copy_item.name=="x":
+                copy_item.set_value(pos.x())
+            if copy_item.name=="y":
+                copy_item.set_value(pos.y())
+            attributes_layout.addWidget(copy_item)
+        self.addWidget(new,str(hash_id))
+        new=attributes_layout.summon()
 
-        # 建立 ScrollArea
-        new_widget = QScrollArea()
-        new_widget.setObjectName("attrScroll")
-        new_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        new_widget.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        new_widget.setWidgetResizable(True)
+        self.send_obj.emit(new,hash_id)
 
-        # 建立內容容器
-        att_widget = QWidget()
-        att_widget.setObjectName("attrWidget")
-        new_widget.att_layout = StorageLayout(att_widget)
-        new_widget.att_layout.setContentsMargins(5, 5, 5, 5)
-        new_widget.att_layout.setSpacing(2)
-        new_widget.att_layout.setAlignment(Qt.AlignTop)
-
-        # 為每個 attribute 建立 AttributeContainer
-        for attr_config in attributes:
-            container = AttributeContainer(attr_config, att_widget)
-            # 連接 tip_signal
-            if self.tip_signal:
-                container.tip_signal.connect(self.tip_signal)
-            new_widget.att_layout.addWidget(container)
-
-        new_widget.setWidget(att_widget)
-        self.addWidget(new_widget, "def_" + component_type,False)
-
-    def create_widget(self,component_type):
-        result = self.correspond.get("def_" + component_type, False)
-        if result:
-            new_widget = QScrollArea()
-            new_widget.setObjectName("attrScroll")
-            new_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-            new_widget.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-            new_widget.setWidgetResizable(True)
-
-            # 建立內容容器
-            att_widget = QWidget()
-            att_widget.setObjectName("attrWidget")
-            new_widget.att_layout = StorageLayout(att_widget)
-            new_widget.att_layout.setContentsMargins(5, 5, 5, 5)
-            new_widget.att_layout.setSpacing(2)
-            new_widget.att_layout.setAlignment(Qt.AlignTop)
-            for att in result.att_layout.storage:
-                container = AttributeContainer(att.attr_config, att_widget)
-                # 連接 tip_signal
-                if self.tip_signal:
-                    container.tip_signal.connect(self.tip_signal)
-                new_widget.att_layout.addWidget(container)
-
-            new_widget.setWidget(att_widget)
-            self.addWidget(new_widget, component_type,False)
-
-        self.create_defwidget(component_type)
-        self.create_widget(component_type)
+    def create_widget(self,obj,data=None):
+        widget=self.find(obj)
+        if widget:
+            return
+        new=QScrollArea()
+        new.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        new.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        new.setWidgetResizable(True)
+        new.setObjectName("attrScroll")
+        container=QWidget()
+        container.setObjectName("attrWidget")
+        new.setWidget(container)
+        attributes_layout=AttributeLayout(obj,container)
+        
+        for attr_config in data:
+            att=AttributeLayout.Container(attr_config)
+            # 連接 number 類型的腳本編輯器信號
+            if att.attr_type == "number":
+                att.open_script_editor.connect(self.request_script_editor.emit)
+            attributes_layout.addWidget(att)
+        self.addWidget(new,obj,False)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -593,16 +690,18 @@ class AttributePanal(StackWidget):
         self.override.show()
 
     def dropEvent(self, event):
-        component = event.mimeData().text()
-        print(f"dropEvent triggered: {component}")
-        self.override.hide()
-        self.setCurrentWidget(self.correspond[component])
+        text=event.mimeData().text()
+        widget=self.find(text)
+        self.setCurrentWidget(widget)
+        event.ignore()
 
     def required_visual_effects(self, event):
-        return event.pos(), QSize(60, 60)
+        return self.rect().center(), self.size()
 
 class EditView(QWidget):
-    for_all_interaction=pyqtSignal(object)
+    exp_singal=pyqtSignal(object,object,object)
+    summon_script_view=pyqtSignal(object,object)  # (edit_view, container)
+
     def __init__(self, parent=None, data=None, tip_signal=None):
         super().__init__(parent)
         if data is None:
@@ -612,6 +711,7 @@ class EditView(QWidget):
         self.setMouseTracking(True)
         self.setAcceptDrops(True)
         self.is_dragging = False
+        self.id_stack=[1]
         self.set_ui()
         self.setStyleSheet(load_style())
 
@@ -619,12 +719,12 @@ class EditView(QWidget):
         main_layout=QHBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
-        self.explorer=Exploror(self.data, self.for_all_interaction)
-        self.watch_preview=WatchPreview(self.data, self.for_all_interaction)
+        self.explorer=Exploror(self.data, self.exp_singal)
+        self.watch_preview=WatchPreview(self.data)
 
         component_related=QSplitter(Qt.Vertical)
-        self.components=ComponentPanel(self.data, self.for_all_interaction)
-        self.attribute=AttributePanal(self.data, self.for_all_interaction, self.tip_signal)
+        self.components=ComponentPanel(self.data)
+        self.attribute=AttributePanal(self.data, self.tip_signal)
         self.drag_box=DragVisual(self)
         component_related.setObjectName("objectSplitter")
         component_related.setHandleWidth(2)
@@ -644,10 +744,41 @@ class EditView(QWidget):
         self.components.viewport().installEventFilter(self)
         self.attribute.installEventFilter(self)
 
-        self.for_all_interaction.connect(self.signal_manager)
+        self.watch_preview.summon.connect(self.pre_call)
+        self.components.button_trigger.connect(self.com_call)
+        self.attribute.send_obj.connect(self.att_call)
+        # 連接腳本編輯器請求信號
+        self.attribute.request_script_editor.connect(
+            lambda container: self.summon_script_view.emit(self, container)
+        )
 
-    def signal_manager(self,state=None):
-        if state=="drop":
+    def get_hash_id(self):
+        if self.id_stack[-1] is self.id_stack[0]:
+            out=self.id_stack.pop()
+            self.id_stack.append(out+1)
+            return out
+        else:
+            return self.id_stack.pop()
+        
+    def delete_component(self,obj):
+        self.id_stack.append(obj.hash_id)
+
+    def att_call(self,obj,hash_id):
+        self.watch_preview.receive.emit(obj,hash_id)
+
+    def com_call(self,obj_type,data):
+        if data=="drop":
+            self.item_drop()
+            return
+        self.attribute.def_widget.emit(obj_type,data)
+
+    def pre_call(self,obj_type,data,hash_id):
+        if hash_id==0:
+            hash_id=self.get_hash_id()
+        self.attribute.summon_widget.emit(obj_type,data,hash_id)
+
+    def signal_manager(self,*state):
+        if state[1] in ["drop","copy"]:
             self.item_drop()
             return
 
