@@ -1,120 +1,493 @@
 # ============================================================================
-# Common Attributes (通用屬性定義)
+# Layer Definitions (圖層類型定義)
+# Based on all_att.txt
 # ============================================================================
 
-# Basic Position (基礎定位屬性)
-COMMON_POSITION = [
-    {"name": "x", "type": "number", "default": 0, "description": "X coordinate"},  # X 座標位置
-    {"name": "y", "type": "number", "default": 0, "description": "Y coordinate"},  # Y 座標位置
-    {"name": "rotation", "type": "number", "default": 0, "description": "Rotation angle (0-360)"},  # 旋轉角度
-    {"name": "opacity", "type": "number", "default": 100, "description": "Opacity (0-100)"},  # 透明度
-    {"name": "alignment", "type": "option", "options": ["cc", "cl", "cr", "tc", "tl", "tr", "bc", "bl", "br"],
-     "default": "tl", "description": "Alignment"},  # 對齊方式
-]
+# Animation Widget (動畫控制器)
+animationWidget = {"Display": "str",
+    "Animation in": ["None"],
+    "Delay start": (1, 2048, 0),
+    "Duration in": (1, 2048, 0),
+    "Duration on": (1, 2048, 0),
+    "Animation out": ["None"],
+    "Duration out": (1, 2048, 0),
+    "Duration off": (1, 2048, 0),
+    "Repeat count": [1],
+    "Restart on load": "bool",
+    "Restart on bright": "bool",
+    "Restart on text change": "bool"}
 
-# 3D Position (3D 定位屬性)
-COMMON_POSITION_3D = [
-    {"name": "x", "type": "number", "default": 0, "description": "X coordinate"},  # X 座標位置
-    {"name": "y", "type": "number", "default": 0, "description": "Y coordinate"},  # Y 座標位置
-    {"name": "z", "type": "number", "default": 0, "description": "Z coordinate (3D)"},  # Z 座標位置
-    {"name": "rotation", "type": "number", "default": 0, "description": "Z-axis rotation"},  # Z 軸旋轉角度
-    {"name": "rotation_x", "type": "number", "default": 0, "description": "X-axis rotation"},  # X 軸旋轉角度
-    {"name": "rotation_y", "type": "number", "default": 0, "description": "Y-axis rotation"},  # Y 軸旋轉角度
-    {"name": "opacity", "type": "number", "default": 100, "description": "Opacity (0-100)"},  # 透明度
-]
+# Text Layer (文字圖層)
+textLayer = {"Name": "str",
+    "Text": "str",
+    "X": (-1280, 1280, 0),
+    "Y": (-1280, 1280, 0),
+    "Animation": "widget",
+    "Gyro effect": (1, 2048, 0),
+    "Font": "font",
+    "Text size": (1, 2048, 0),
+    "Color": "color",
+    "Color dim": "color",
+    "Anim scale X": (1, 2048, 0),
+    "Anim scale Y": (1, 2048, 0),
+    "Rotation": (-720, 720, 0),
+    "Skew X": (0, 90, 0),
+    "Skew Y": (0, 90, 0),
+    "Opacity": (0, 100, 0),
+    "Alignment": ["Center","Top left","Top center","Top right","Center left","Center right","Bottom left","Bottom center","Bottom right"],
+    "Transform": ["None"],
+    "Display": ["Always"],
+    "Shader": ["None"],
+    "Tap action": ["None"],
+    "Text effect": ["None"],
+    "Keep position if card displayed": "bool"}
 
-# Transform (變換屬性)
-COMMON_TRANSFORM = [
-    {"name": "gyro", "type": "number", "default": 0, "description": "Gyroscope effect (0-360)"},  # 陀螺儀效果
-    {"name": "skew_x", "type": "number", "default": 0, "description": "X-axis skew"},  # X 軸傾斜
-    {"name": "skew_y", "type": "number", "default": 0, "description": "Y-axis skew"},  # Y 軸傾斜
-    {"name": "scale_x", "type": "number", "default": 100, "description": "X-axis scale (%)"},  # X 軸縮放
-    {"name": "scale_y", "type": "number", "default": 100, "description": "Y-axis scale (%)"},  # Y 軸縮放
-]
+# Directional Light Layer (方向光源圖層)
+directionalLightLayer = {"Name": "str",
+    "Enable": "bool",
+    "Intensity": (1, 2048, 0),
+    "Direction X": (1, 2048, 0),
+    "Direction Y": (1, 2048, 0),
+    "Direction Z": (1, 2048, 0),
+    "Color": "color"}
 
-# Size (尺寸屬性)
-COMMON_SIZE = [
-    {"name": "width", "type": "number", "default": 100, "description": "Width"},  # 寬度
-    {"name": "height", "type": "number", "default": 100, "description": "Height"},  # 高度
-]
+# 3D Layer (3D圖層)
+layer3D = {"Name": "str",
+    "Photo": "file",
+    "X": (-1280, 1280, 0),
+    "Y": (-1280, 1280, 0),
+    "Z": (-1280, 1280, 0),
+    "Rotation X": (-720, 720, 0),
+    "Rotation Y": (-720, 720, 0),
+    "Rotation Z": (-720, 720, 0),
+    "Scale X": (1, 2048, 0),
+    "Scale Y": (1, 2048, 0),
+    "Scale Z": (1, 2048, 0),
+    "Gyro effect": (1, 2048, 0),
+    "Opacity": (0, 100, 0),
+    "Color": "color",
+    "Display": ["Always"]}
 
-# Color (顏色屬性)
-COMMON_COLOR = [
-    {"name": "color", "type": "color", "default": "ffffff", "description": "Primary color"},  # 主顏色
-    {"name": "color_dim", "type": "color", "default": "", "description": "Dim mode color"},  # 暗屏模式顏色
-]
+# Curved Text Layer (曲線文字圖層) - inherits from textLayer
+curvedTextLayer = {"Name": "str",
+    "Text": "str",
+    "X": (-1280, 1280, 0),
+    "Y": (-1280, 1280, 0),
+    "Animation": "widget",
+    "Gyro effect": (1, 2048, 0),
+    "Font": "font",
+    "Text size": (1, 2048, 0),
+    "Color": "color",
+    "Color dim": "color",
+    "Anim scale X": (1, 2048, 0),
+    "Anim scale Y": (1, 2048, 0),
+    "Rotation": (-720, 720, 0),
+    "Skew X": (0, 90, 0),
+    "Skew Y": (0, 90, 0),
+    "Opacity": (0, 100, 0),
+    "Alignment": ["Center","Top left","Top center","Top right","Center left","Center right","Bottom left","Bottom center","Bottom right"],
+    "Transform": ["None"],
+    "Display": ["Always"],
+    "Shader": ["None"],
+    "Tap action": ["None"],
+    "Text effect": ["None"],
+    "Keep position if card displayed": "bool",
+    "Radius": (1, 2048, 0),
+    "Direction": ["Up"]}
 
-# Display (顯示屬性)
-COMMON_DISPLAY = [
-    {"name": "display", "type": "option", "options": ["bd", "b", "d"],
-     "default": "bd", "description": "Display mode (bd=both, b=bright only, d=dim only)"},  # 顯示模式
-]
+# Image Layer (圖片圖層) - inherits from textLayer
+imageLayer = {"Name": "str",
+    "X": (-1280, 1280, 0),
+    "Y": (-1280, 1280, 0),
+    "Gyro effect": (1, 2048, 0),
+    "Width": (1, 2048, 0),
+    "Height": (1, 2048, 0),
+    "Rotation": (-720, 720, 0),
+    "Skew X": (0, 90, 0),
+    "Skew Y": (0, 90, 0),
+    "Opacity": (0, 100, 0),
+    "Tint": "color",
+    "Alignment": ["Center","Top left","Top center","Top right","Center left","Center right","Bottom left","Bottom center","Bottom right"],
+    "Display": ["Always"],
+    "Shader": ["None"],
+    "Tap action": ["None"],
+    "Custom image": "file",
+    "Keep position if card displayed": "bool"}
 
-# Interaction (互動屬性)
-COMMON_INTERACTION = [
-    {"name": "tap_action", "type": "text", "default": "",
-     "description": "Tap action (script:func, app:package, sw_start_stop, sw_reset)"},  # 點擊動作
-]
+# Tachymeter Layer (測速計圖層) - inherits from curvedTextLayer
+tachymeterLayer = {"Name": "str",
+    "Text": "str",
+    "X": (-1280, 1280, 0),
+    "Y": (-1280, 1280, 0),
+    "Gyro effect": (1, 2048, 0),
+    "Font": "font",
+    "Text size": (1, 2048, 0),
+    "Color": "color",
+    "Color dim": "color",
+    "Anim scale X": (1, 2048, 0),
+    "Anim scale Y": (1, 2048, 0),
+    "Radius": (1, 2048, 0),
+    "Rotation": (-720, 720, 0),
+    "Skew X": (0, 90, 0),
+    "Skew Y": (0, 90, 0),
+    "Opacity": (0, 100, 0),
+    "Alignment": ["Center","Top left","Top center","Top right","Center left","Center right","Bottom left","Bottom center","Bottom right"],
+    "Transform": ["None"],
+    "Marker width": (1, 2048, 1),
+    "Marker height": (1, 2048, 1),
+    "Major markers": ["Medium"],
+    "Minor markers": ["Medium"],
+    "Speeds": ["400,300,240,200,180,160,140,120,110,95,90,85,80,75,70,65,60"],
+    "Text rotation": ["Rotate Upright"],
+    "Squarify": (1, 2048, 1),
+    "Display": ["Always"],
+    "Tap action": ["None"],
+    "Text effect": ["None"],
+    "Keep position if card displayed": "bool"}
 
-# Shadow (陰影效果)
-COMMON_SHADOW = [
-    {"name": "shadow", "type": "option", "options": ["", "Drop"], "default": "", "description": "Shadow type"},  # 陰影類型
-    {"name": "w_color", "type": "color", "default": "000000", "description": "Shadow color"},  # 陰影顏色
-    {"name": "w_distance", "type": "number", "default": 4, "description": "Shadow distance"},  # 陰影距離
-    {"name": "w_opacity", "type": "number", "default": 100, "description": "Shadow opacity"},  # 陰影透明度
-]
+# Shape Layer (形狀圖層)
+shapeLayer = {"Name": "str",
+    "Shape": ["square"],
+    "X": (-1280, 1280, 0),
+    "Y": (-1280, 1280, 0),
+    "Gyro effect": (1, 2048, 0),
+    "Width": (1, 2048, 0),
+    "Height": (1, 2048, 0),
+    "Rotation": (-720, 720, 0),
+    "Skew X": (0, 90, 0),
+    "Skew Y": (0, 90, 0),
+    "Opacity": (0, 100, 0),
+    "Alignment": ["Center","Top left","Top center","Top right","Center left","Center right","Bottom left","Bottom center","Bottom right"],
+    "Color": "color",
+    "Display": ["Always"],
+    "Shader": ["None"],
+    "Tap action": ["None"],
+    "Shape effect": ["None"]}
 
-# Outline (描邊效果)
-COMMON_OUTLINE = [
-    {"name": "outline", "type": "option", "options": ["", "Outline"], "default": "", "description": "Outline type"},  # 描邊類型
-    {"name": "o_color", "type": "color", "default": "000000", "description": "Outline color"},  # 描邊顏色
-    {"name": "o_size", "type": "number", "default": 2, "description": "Outline size"},  # 描邊大小
-    {"name": "o_opacity", "type": "number", "default": 100, "description": "Outline opacity"},  # 描邊透明度
-]
+# Marker Layer (標記圖層) - inherits from tachymeterLayer
+markerLayer = {"Name": "str",
+    "Text": "str",
+    "X": (-1280, 1280, 0),
+    "Y": (-1280, 1280, 0),
+    "Gyro effect": (1, 2048, 0),
+    "Font": "font",
+    "Text size": (1, 2048, 0),
+    "Color": "color",
+    "Color dim": "color",
+    "Anim scale X": (1, 2048, 0),
+    "Anim scale Y": (1, 2048, 0),
+    "Radius": (1, 2048, 0),
+    "Rotation": (-720, 720, 0),
+    "Skew X": (0, 90, 0),
+    "Skew Y": (0, 90, 0),
+    "Opacity": (0, 100, 0),
+    "Alignment": ["Center","Top left","Top center","Top right","Center left","Center right","Bottom left","Bottom center","Bottom right"],
+    "Transform": ["None"],
+    "Marker width": (1, 2048, 1),
+    "Marker height": (1, 2048, 1),
+    "Marker count": (1, 2048, 1),
+    "Squarify": (1, 2048, 1),
+    "Display": ["Always"],
+    "Tap action": ["None"],
+    "Text effect": ["None"]}
 
-# Shader (著色器效果)
-COMMON_SHADER = [
-    {"name": "shader", "type": "option",
-     "options": ["", "Segment", "Radial", "GradientLinear", "GradientRadial", "Progress", "ProgressBetween", "HSV"],
-     "default": "", "description": "Shader type"},  # 著色器類型
-    {"name": "u_1", "type": "text", "default": "", "description": "Shader parameter 1"},  # 著色器參數1
-    {"name": "u_2", "type": "text", "default": "", "description": "Shader parameter 2"},  # 著色器參數2
-    {"name": "u_3", "type": "text", "default": "", "description": "Shader parameter 3"},  # 著色器參數3
-    {"name": "u_4", "type": "text", "default": "", "description": "Shader parameter 4"},  # 著色器參數4
-    {"name": "u_5", "type": "text", "default": "", "description": "Shader parameter 5"},  # 著色器參數5
-]
+# Map Layer (地圖圖層) - inherits from imageLayer
+mapLayer = {"X": (-1280, 1280, 0),
+    "Y": (-1280, 1280, 0),
+    "Gyro effect": (1, 2048, 0),
+    "Width": (1, 2048, 0),
+    "Height": (1, 2048, 0),
+    "Rotation": (-720, 720, 0),
+    "Skew X": (0, 90, 0),
+    "Skew Y": (0, 90, 0),
+    "Opacity": (0, 100, 0),
+    "Latitude": (1, 2048, 0),
+    "Longitude": (1, 2048, 0),
+    "Map zoom": (1, 2048, 0),
+    "Map scale": (1, 2048, 0),
+    "Tint": "color",
+    "Alignment": ["Center","Top left","Top center","Top right","Center left","Center right","Bottom left","Bottom center","Bottom right"],
+    "Display": ["Always"],
+    "Shader": ["None"],
+    "Tap action": ["None"],
+    "Map effect": ["None"]}
 
-# Blend Mode (混合模式)
-COMMON_BLEND = [
-    {"name": "blend_mode", "type": "option",
-     "options": ["", "Multiply", "Screen", "Add", "Blend", "mode2", "mode3"],
-     "default": "", "description": "Blend mode"},  # 混合模式
-]
+# Slideshow Layer (幻燈片圖層) - inherits from imageLayer
+slideshowLayer = {"Photo": "file",
+    "Photo duration": (1, 2048, 1),
+    "Photo clip": ["corner1"],
+    "X": (-1280, 1280, 0),
+    "Y": (-1280, 1280, 0),
+    "Gyro effect": (1, 2048, 0),
+    "Width": (1, 2048, 0),
+    "Height": (1, 2048, 0),
+    "Rotation": (-720, 720, 0),
+    "Skew X": (0, 90, 0),
+    "Skew Y": (0, 90, 0),
+    "Opacity": (0, 100, 0),
+    "Tint": "color",
+    "Alignment": ["Center","Top left","Top center","Top right","Center left","Center right","Bottom left","Bottom center","Bottom right"],
+    "Display": ["Always"],
+    "Shader": ["None"],
+    "Tap action": ["None"],
+    "Keep position if card displayed": "bool"}
 
-# Animation Scale (動畫縮放)
-COMMON_ANIM_SCALE = [
-    {"name": "anim_scale_x", "type": "text", "default": "", "description": "Animation scale X (bind to tweens.*)"},  # 動畫縮放X
-    {"name": "anim_scale_y", "type": "text", "default": "", "description": "Animation scale Y (bind to tweens.*)"},  # 動畫縮放Y
-]
+# Text Ring Layer (環形文字圖層) - inherits from textLayer
+textRingLayer = {"Name": "str",
+    "X": (-1280, 1280, 0),
+    "Y": (-1280, 1280, 0),
+    "Gyro effect": (1, 2048, 0),
+    "Font": "font",
+    "Text size": (1, 2048, 0),
+    "Color": "color",
+    "Color dim": "color",
+    "Anim scale X": (1, 2048, 0),
+    "Anim scale Y": (1, 2048, 0),
+    "Rotation": (-720, 720, 0),
+    "Skew X": (0, 90, 0),
+    "Skew Y": (0, 90, 0),
+    "Opacity": (0, 100, 0),
+    "Alignment": ["Center","Top left","Top center","Top right","Center left","Center right","Bottom left","Bottom center","Bottom right"],
+    "Transform": ["None"],
+    "Display": ["Always"],
+    "Radius": (1, 2048, 0),
+    "Ring type": ["1-12"],
+    "Show every": (1, 2048, 1),
+    "Hide text": "str",
+    "Text rotation": ["Upright"],
+    "Angle start": (1, 2048, 1),
+    "Angle end": (1, 2048, 1),
+    "Squarify": (1, 2048, 1),
+    "Shader": ["None"],
+    "Tap action": ["None"],
+    "Text effect": ["None"],
+    "Keep position if card displayed": "bool"}
 
-# Protected (保護屬性)
-COMMON_PROTECTED = [
-    {"name": "protected", "type": "option", "options": ["", "y"], "default": "", "description": "Protected (prevent editing)"},  # 是否保護
-]
+# Rounded Rectangle Layer (圓角矩形圖層) - inherits from imageLayer
+roundedRectangleLayer = {"X": (-1280, 1280, 0),
+    "Y": (-1280, 1280, 0),
+    "Gyro effect": (1, 2048, 0),
+    "Width": (1, 2048, 0),
+    "Height": (1, 2048, 0),
+    "Corner radius": (1, 2048, 0),
+    "Corner type": (1, 2048, 1),
+    "Rotation": (-720, 720, 0),
+    "Skew X": (0, 90, 0),
+    "Skew Y": (0, 90, 0),
+    "Opacity": (0, 100, 0),
+    "Alignment": ["Center","Top left","Top center","Top right","Center left","Center right","Bottom left","Bottom center","Bottom right"],
+    "Color": "color",
+    "Display": ["Always"],
+    "Shader": ["None"],
+    "Tap action": ["None"],
+    "Shape effect": ["None"],
+    "Keep position if card displayed": "bool"}
 
-# 導出所有 COMMON 屬性
-__all__ = [
-    'COMMON_POSITION',
-    'COMMON_POSITION_3D',
-    'COMMON_TRANSFORM',
-    'COMMON_SIZE',
-    'COMMON_COLOR',
-    'COMMON_DISPLAY',
-    'COMMON_INTERACTION',
-    'COMMON_SHADOW',
-    'COMMON_OUTLINE',
-    'COMMON_SHADER',
-    'COMMON_BLEND',
-    'COMMON_ANIM_SCALE',
-    'COMMON_PROTECTED',
+# Series Layer (數據系列圖層) - inherits from textLayer
+seriesLayer = {"X": (-1280, 1280, 0),
+    "Y": (-1280, 1280, 0),
+    "Gyro effect": (1, 2048, 0),
+    "Font": "font",
+    "Font 2": "font",
+    "Text size": (1, 2048, 0),
+    "Text size 2": (1, 2048, 0),
+    "Color": "color",
+    "Color 2": "color",
+    "Anim scale X": (1, 2048, 0),
+    "Anim scale Y": (1, 2048, 0),
+    "Rotation": (-720, 720, 0),
+    "Skew X": (0, 90, 0),
+    "Skew Y": (0, 90, 0),
+    "Opacity": (0, 100, 0),
+    "Alignment": ["Center","Top left","Top center","Top right","Center left","Center right","Bottom left","Bottom center","Bottom right"],
+    "Transform": ["None"],
+    "Display": ["Always"],
+    "Series type": ["Day of the week short"],
+    "Orientation": ["Vertical"],
+    "Current position": ["Current Centered"],
+    "Spacing": (1, 2048, 0),
+    "Shader": ["None"],
+    "Tap action": ["None"],
+    "Text effect": ["None"],
+    "Keep position if card displayed": "bool"}
+
+# Complication Layer (複雜功能圖層) - inherits from textLayer
+complicationLayer = {"Color text": "color",
+    "Color background": "color",
+    "X": (-1280, 1280, 0),
+    "Y": (-1280, 1280, 0),
+    "Animation": "widget",
+    "Gyro effect": (1, 2048, 0),
+    "Font": "font",
+    "Text size": (1, 2048, 0),
+    "Color": "color",
+    "Color dim": "color",
+    "Anim scale X": (1, 2048, 0),
+    "Anim scale Y": (1, 2048, 0),
+    "Rotation": (-720, 720, 0),
+    "Skew X": (0, 90, 0),
+    "Skew Y": (0, 90, 0),
+    "Opacity": (0, 100, 0),
+    "Width": (1, 2048, 0),
+    "Height": (1, 2048, 0),
+    "Alignment": ["Center","Top left","Top center","Top right","Center left","Center right","Bottom left","Bottom center","Bottom right"],
+    "Transform": ["None"],
+    "Display": ["Always"]}
+
+# Chart Layer (圖表圖層)
+chartLayer = {"X": (-1280, 1280, 0),
+    "Y": (-1280, 1280, 0),
+    "Gyro effect": (1, 2048, 0),
+    "Rotation": (-720, 720, 0),
+    "Skew X": (0, 90, 0),
+    "Skew Y": (0, 90, 0),
+    "Opacity": (0, 100, 0),
+    "Width": (1, 2048, 0),
+    "Height": (1, 2048, 0),
+    "Color": "color",
+    "Color 2": "color",
+    "Color 3": "color",
+    "Color 4": "color",
+    "Chart type": ["line"],
+    "Data points": "str",
+    "Min max": "str",
+    "Chart group": (1, 2048, 0),
+    "Line width": (1, 2048, 0),
+    "Marker size": (1, 2048, 0),
+    "Tension": (1, 2048, 0),
+    "Top opacity": (0, 100, 0),
+    "Bottom opacity": (0, 100, 0),
+    "Radius": (1, 2048, 0),
+    "Bar thickness": (1, 2048, 0),
+    "Corner type": (1, 2048, 1),
+    "Lines": "str",
+    "Labels": "str",
+    "Anim scale X": (1, 2048, 0),
+    "Anim scale Y": (1, 2048, 0),
+    "Display": ["Always"]}
+
+# Image Condition Layer (條件圖片圖層) - inherits from textLayer
+imageCondLayer = {"Name": "str",
+    "X": (-1280, 1280, 0),
+    "Y": (-1280, 1280, 0),
+    "Gyro effect": (1, 2048, 0),
+    "Width": (1, 2048, 0),
+    "Height": (1, 2048, 0),
+    "Rotation": (-720, 720, 0),
+    "Skew X": (0, 90, 0),
+    "Skew Y": (0, 90, 0),
+    "Opacity": (0, 100, 0),
+    "Tint": "color",
+    "Alignment": ["Center","Top left","Top center","Top right","Center left","Center right","Bottom left","Bottom center","Bottom right"],
+    "Display": ["Always"],
+    "Shader": ["None"],
+    "Image selection": (1, 2048, 0),
+    "Image grid": ["3x3"],
+    "Tap action": ["None"],
+    "Custom image": "file",
+    "Weather includes night symbols": "bool",
+    "Keep position if card displayed": "bool"}
+
+# Image GIF Layer (GIF圖片圖層)
+imageGifLayer = {"X": (-1280, 1280, 0),
+    "Y": (-1280, 1280, 0),
+    "Gyro effect": (1, 2048, 0),
+    "Rotation": (-720, 720, 0),
+    "Skew X": (0, 90, 0),
+    "Skew Y": (0, 90, 0),
+    "Opacity": (0, 100, 0),
+    "Alignment": ["Center","Top left","Top center","Top right","Center left","Center right","Bottom left","Bottom center","Bottom right"],
+    "Path": "str",
+    "Width": (1, 2048, 0),
+    "Height": (1, 2048, 0),
+    "Gif delay": (1, 2048, 0),
+    "Display": ["Always"]}
+
+# Progress Layer (進度條圖層)
+progressLayer = {"X": (-1280, 1280, 0),
+    "Y": (-1280, 1280, 0),
+    "Gyro effect": (1, 2048, 0),
+    "Rotation": (-720, 720, 0),
+    "Skew X": (0, 90, 0),
+    "Skew Y": (0, 90, 0),
+    "Opacity": (0, 100, 0),
+    "Width": (1, 2048, 0),
+    "Height": (1, 2048, 0),
+    "Color": "color",
+    "Color 2": "color",
+    "Color 3": "color",
+    "Color 4": "color",
+    "Outside opacity": (0, 100, 0),
+    "Radius": (1, 2048, 0),
+    "Pct complete": "str",
+    "Angle": (1, 2048, 0),
+    "Margin": (1, 2048, 0),
+    "End style": ["flat"],
+    "Corner type": (1, 2048, 1),
+    "Anim scale X": (1, 2048, 0),
+    "Anim scale Y": (1, 2048, 0),
+    "Display": ["Always"]}
+
+# Ring Layer (圓環圖層)
+ringLayer = {"X": (-1280, 1280, 0),
+    "Y": (-1280, 1280, 0),
+    "Gyro effect": (1, 2048, 0),
+    "Rotation": (-720, 720, 0),
+    "Skew X": (0, 90, 0),
+    "Skew Y": (0, 90, 0),
+    "Opacity": (0, 100, 0),
+    "Radius outer": (1, 2048, 0),
+    "Radius inner": (1, 2048, 0),
+    "Radius": (1, 2048, 0),
+    "Angle": (1, 2048, 0),
+    "Angle total": (1, 2048, 0),
+    "Is clockwise": ["Y"],
+    "Color": "color",
+    "Color 2": "color",
+    "Color 3": "color",
+    "Outside opacity": (0, 100, 0),
+    "Anim scale X": (1, 2048, 0),
+    "Anim scale Y": (1, 2048, 0),
+    "Display": ["Always"]}
+
+# Markers HM Layer (時分標記圖層) - inherits from markerLayer
+markersHMLayer = {"X": (-1280, 1280, 0),
+    "Y": (-1280, 1280, 0),
+    "Gyro effect": (1, 2048, 0),
+    "Rotation": (-720, 720, 0),
+    "Skew X": (0, 90, 0),
+    "Skew Y": (0, 90, 0),
+    "Opacity": (0, 100, 0),
+    "Radius": (1, 2048, 0),
+    "Anim scale X": (1, 2048, 0),
+    "Anim scale Y": (1, 2048, 0),
+    "Hour markers": ["Medium"],
+    "Minute markers": ["Medium"],
+    "Hour color": "color",
+    "Minute color": "color",
+    "Squarify": (1, 2048, 1),
+    "Display": ["Always"]}
+
+# Export all Layer definitions
+__all__ = ["animationWidget",
+    "textLayer",
+    "directionalLightLayer",
+    "layer3D",
+    "curvedTextLayer",
+    "imageLayer",
+    "tachymeterLayer",
+    "shapeLayer",
+    "markerLayer",
+    "mapLayer",
+    "slideshowLayer",
+    "textRingLayer",
+    "roundedRectangleLayer",
+    "seriesLayer",
+    "complicationLayer",
+    "chartLayer",
+    "imageCondLayer",
+    "imageGifLayer",
+    "progressLayer",
+    "ringLayer",
+    "markersHMLayer"
 ]

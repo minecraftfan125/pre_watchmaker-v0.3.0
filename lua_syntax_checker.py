@@ -8,6 +8,9 @@ from dataclasses import dataclass
 from typing import List, Optional, Dict, Any
 from enum import Enum
 import re
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ErrorSeverity(Enum):
@@ -536,7 +539,7 @@ class LuaSyntaxChecker:
         """Fallback to basic regex-based checking when parser unavailable"""
         if not self._fallback_warned:
             self._fallback_warned = True
-            print("Warning: luaparser not installed, using basic syntax check")
+            logger.debug("luaparser not installed, using basic syntax check")
 
         errors = []
         lines = code.split('\n')

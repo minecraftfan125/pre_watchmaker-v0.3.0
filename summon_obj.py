@@ -1,1359 +1,913 @@
 import os
+import re
 import math
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-                             QSplitter, QScrollArea, QSizePolicy, QPushButton,
-                             QGridLayout, QTreeWidget, QTreeWidgetItem,
-                             QStackedWidget, QListWidget, QListWidgetItem,
-                             QLineEdit, QComboBox, QColorDialog, QGraphicsOpacityEffect)
-from PyQt5.QtCore import Qt, QPoint, QMimeData, pyqtSignal, QSize, QThread, QTimer, QEvent, QRect, QPropertyAnimation, QEasingCurve, QObject
-from PyQt5.QtGui import QPixmap, QIcon, QDrag, QCursor, QColor, QPainter, QTransform, QFontMetrics
+from PyQt5.QtWidgets import (
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QSplitter,
+    QScrollArea,
+    QSizePolicy,
+    QPushButton,
+    QGridLayout,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QGraphicsProxyWidget,
+    QGraphicsTextItem,
+    QStackedWidget,
+    QListWidget,
+    QListWidgetItem,
+    QGraphicsItem,
+    QGraphicsRectItem,
+    QGraphicsPixmapItem,
+    QLineEdit,
+    QComboBox,
+    QColorDialog,
+    QGraphicsOpacityEffect,
+)
+from PyQt5.QtCore import (
+    Qt,
+    QPoint,
+    QMimeData,
+    pyqtSignal,
+    QSize,
+    QThread,
+    QTimer,
+    QEvent,
+    QRectF,
+    QPointF,
+    QRect,
+    QPropertyAnimation,
+    QEasingCurve,
+    QObject,
+)
+from PyQt5.QtGui import (
+    QPen,
+    QPixmap,
+    QIcon,
+    QDrag,
+    QCursor,
+    QColor,
+    QBrush,
+    QPainter,
+    QPainterPath,
+    QTransform,
+    QFontMetrics,
+    QMouseEvent,
+    QFont
+)
 from script_view import ScriptView
-from common import FlowLayout, WatchFaceText, StackWidget
+from common import FlowLayout, StackWidget, FontManager
 import components
+import numpy as np
 
+
+# comunicate obj
+class Signal(QObject):
+    thisF = pyqtSignal(float)
+    thisS = pyqtSignal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+    def connect(self, method):
+        self.thisF.connect(method)
+        self.thisS.connect(method)
+
+    def disconnect(self, method):
+        self.thisF.disconnect(method)
+        self.thisS.disconnect(method)
+
+    def emit(self, value):
+        if isinstance(value, float) or isinstance(value, int):
+            self.thisF.emit(float(value))
+        else:
+            try:
+                self.thisS.emit(value)
+            except:
+                print(value)
+
+
+# =============================================================================
+# Base Layer Class
+# =============================================================================
+class Attribute(dict):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.typ = dict(self.items())
+        self.signal = {}
+        self._emitting = set()  # 防止遞歸的標誌
+        for key in self.keys():
+            self.signal[key] = Signal()
+            # 使用 lambda 並通過預設參數捕獲 key 值，避免閉包問題
+            self.signal[key].connect(lambda value, k=key: self._on_signal(k, value))
+
+    def __getitem__(self, key):
+        """取值時自動根據類型定義轉換，避免類型錯誤"""
+        value = super().__getitem__(key)
+        type_def = self.typ.get(key)
+
+        # tuple 類型: (min, max, is_int) - 數值類型
+        if isinstance(type_def, tuple) and len(type_def) >= 3:
+            try:
+                if type_def[2] == 0:  # float
+                    return float(value) if value != '' else 0.0
+                else:  # int
+                    return int(float(value)) if value != '' else 0
+            except (ValueError, TypeError):
+                return 0.0 if type_def[2] == 0 else 0
+
+        # list 類型: 選項列表 - 返回字符串
+        if isinstance(type_def, list):
+            return str(value) if value else (type_def[0] if type_def else '')
+
+        # 其他類型直接返回
+        return value
+
+    def _on_signal(self, key, value):
+        """從外部信號接收值時調用，不再發射信號避免遞歸"""
+        if key in self._emitting:
+            return
+        if key in self and self[key] == value:
+            return
+        super().__setitem__(key, value)
+
+    def set_default(self, default_value: dict):
+        """設置預設值，不觸發信號"""
+        for key, value in default_value.items():
+            if key in self:
+                super().__setitem__(key, value)
+
+    def __setitem__(self, key, value):
+        """設置值並發射信號給 Layer"""
+        if key in self._emitting:
+            return
+        if key in self and self[key] == value:
+            return
+
+        self._emitting.add(key)
+        try:
+            super().__setitem__(key, value)
+            # 根據類型轉換值，只發射一次信號
+            if isinstance(self.typ.get(key), tuple):
+                emit_value = float(value) if self.typ[key][2] == 0 else int(value)
+            else:
+                emit_value = value
+            self.signal[key].emit(emit_value)
+        finally:
+            self._emitting.discard(key)
+
+
+class Handle(QGraphicsRectItem):
+    def __init__(self, handle_type, parent=None):
+        super().__init__(-4, -4, 8, 8, parent)
+        self.handle_type = handle_type
+        self.setBrush(QColor("#FFFFFF"))
+        self.setPen(QPen(QColor("#0078D7"), 2))
+        self.setFlag(QGraphicsItem.ItemIsMovable, False)
+        self.setCursor(self._get_cursor())
+        self.dragging = False
+        self.start_pos = None
+
+    def _get_cursor(self):
+        cursors = {
+            "top-left": Qt.SizeFDiagCursor,
+            "top-right": Qt.SizeBDiagCursor,
+            "bottom-left": Qt.SizeBDiagCursor,
+            "bottom-right": Qt.SizeFDiagCursor,
+            "top": Qt.SizeVerCursor,
+            "bottom": Qt.SizeVerCursor,
+            "left": Qt.SizeHorCursor,
+            "right": Qt.SizeHorCursor,
+        }
+        return cursors.get(self.handle_type, Qt.ArrowCursor)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.dragging = True
+            self.start_pos = event.scenePos()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if self.dragging and self.parentItem():
+            self.parentItem().resize_from_handle(
+                self.handle_type, event.scenePos(), self.start_pos
+            )
+            self.start_pos = event.scenePos()
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.dragging = False
+            event.accept()
+
+class RotateHandle(QGraphicsRectItem):
+    def __init__(self, parent=None):
+        super().__init__(-5, -5, 10, 10, parent)
+        self.setBrush(QColor("#4CAF50"))
+        self.setPen(QPen(QColor("#2E7D32"), 2))
+        self.setFlag(QGraphicsItem.ItemIsMovable, False)
+        self.setCursor(Qt.PointingHandCursor)
+        self.dragging = False
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.dragging = True
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if self.dragging and self.parentItem():
+            self.parentItem().rotate_from_handle(event.scenePos())
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.dragging = False
+            event.accept()
+
+class ComponentFrameLine(QGraphicsRectItem):
+    def __init__(self, parent_item):
+        # 繼承父物件的 boundingRect，並將自己設為父物件的子項
+        super().__init__(parent_item.boundingRect(), parent_item)
+        self.setFlags(QGraphicsItem.ItemIsMovable | QGraphicsItem.ItemIsSelectable)
+        self.setAcceptHoverEvents(True)
+
+        self.handle_size = 10  # 縮放點大小
+        self.rot_offset = 40  # 旋轉鈕上方偏移量
+        self.handle_color = QColor("#2980b9")
+
+        # 設定畫筆為虛線
+        self.setPen(QPen(self.handle_color, 1, Qt.DashLine))
+
+    def _get_handle_rects(self):
+        """計算 9 個點的局部座標位置"""
+        r = self.rect()
+        s = self.handle_size
+        hs = s / 2
+
+        res = {
+            "tl": QRectF(r.left() - hs, r.top() - hs, s, s),
+            "tm": QRectF(r.center().x() - hs, r.top() - hs, s, s),
+            "tr": QRectF(r.right() - hs, r.top() - hs, s, s),
+            "mr": QRectF(r.right() - hs, r.center().y() - hs, s, s),
+            "br": QRectF(r.right() - hs, r.bottom() - hs, s, s),
+            "bm": QRectF(r.center().x() - hs, r.bottom() - hs, s, s),
+            "bl": QRectF(r.left() - hs, r.bottom() - hs, s, s),
+            "ml": QRectF(r.left() - hs, r.center().y() - hs, s, s),
+        }
+
+        # 旋轉鈕
+        rot_center = QPointF(r.center().x(), r.top() - self.rot_offset)
+        res["rot"] = QRectF(
+            rot_center.x() - hs - 2, rot_center.y() - hs - 2, s + 4, s + 4
+        )
+        return res
+
+    def boundingRect(self):
+        # 必須包含所有控制點，否則繪圖會被切掉
+        return self.rect().adjusted(
+            -self.handle_size,
+            -self.rot_offset - self.handle_size,
+            self.handle_size,
+            self.handle_size,
+        )
+
+    def shape(self):
+        path = QPainterPath()
+        res = self._get_handle_rects()
+        path.addEllipse(res.pop("rot"))
+        for handle in res.values():
+            path.addRect(handle)
+        return path
+
+    def hoverMoveEvent(self, event):
+        """當滑鼠在控制框上移動時，根據位置改變游標"""
+        res = self._get_handle_rects()
+        pos = event.pos()
+        cursor = [
+            Qt.SizeFDiagCursor,
+            Qt.SizeVerCursor,
+            Qt.SizeBDiagCursor,
+            Qt.SizeHorCursor,
+        ]
+        angle = self.parentItem().rotation() % 360
+        offset = int((angle + 22.5) // 45)
+
+        # 判斷滑鼠落在哪個點上
+        if res["tl"].contains(pos) or res["br"].contains(pos):
+            self.setCursor(cursor[offset % 4])
+        elif res["tm"].contains(pos) or res["bm"].contains(pos):
+            self.setCursor(cursor[(1 + offset) % 4])
+        elif res["tr"].contains(pos) or res["bl"].contains(pos):
+            self.setCursor(cursor[(2 + offset) % 4])
+        elif res["ml"].contains(pos) or res["mr"].contains(pos):
+            self.setCursor(cursor[(3 + offset) % 4])
+        elif res["rot"].contains(pos):
+            self.setCursor(Qt.OpenHandCursor)
+        else:
+            self.setCursor(Qt.ArrowCursor)
+
+        super().hoverMoveEvent(event)
+
+    def hoverLeaveEvent(self, event):
+        """離開控制框時恢復預設游標"""
+        self.setCursor(Qt.ArrowCursor)
+        super().hoverLeaveEvent(event)
+
+    def mousePressEvent(self, event):
+        res = self._get_handle_rects()
+        pos = event.pos()
+        if res["tl"].contains(pos) or res["br"].contains(pos):
+            print("1")
+        elif res["tm"].contains(pos) or res["bm"].contains(pos):
+            print("2")
+        elif res["tr"].contains(pos) or res["bl"].contains(pos):
+            print("3")
+        elif res["ml"].contains(pos) or res["mr"].contains(pos):
+            print("4")
+        elif res["rot"].contains(pos):
+            print("5")
+        else:
+            pass
+
+    def paint(self, painter, option, widget=None):
+        # 設定抗鋸齒讓圓形與斜線更美觀
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        # 1. 畫主虛線框
+        painter.setPen(self.pen())
+        painter.drawRect(self.rect())
+
+        # 2. 畫連接旋轉鈕的直線
+        handles = self._get_handle_rects()
+        rot_rect = handles["rot"]
+        painter.setPen(QPen(self.handle_color, 1))
+        painter.drawLine(
+            QPointF(self.rect().center().x(), self.rect().top()),
+            QPointF(rot_rect.center().x(), rot_rect.bottom()),
+        )
+
+        # 3. 畫所有控制點
+        painter.setBrush(QBrush(Qt.white))
+        for name, rect in handles.items():
+            if name == "rot":
+                painter.setBrush(QBrush(QColor("#ecf0f1")))
+                painter.drawEllipse(rect)  # 旋轉鈕畫圓的
+                # 畫個簡單的小箭頭符號
+                painter.drawArc(rect.adjusted(2, 2, -2, -2), 0, 270 * 16)
+            else:
+                painter.setBrush(QBrush(Qt.white))
+                painter.drawRect(rect)  # 縮放點畫方的
+
+class LuaText(str):
+    def __init__(self,text):
+        super().__init__()
 # ============================================================================
 # Base Component Class
 # ============================================================================
-class Component(QWidget):
-    def __init__(self, attributes=None, parent=None):
-        super().__init__(parent)
-        self.attributes = {}
-        if attributes is not None:
-            self.attributes = attributes
-        self.setAttribute(Qt.WA_TranslucentBackground)
+class Component:
+    def init_component(self, attribute: Attribute, parent=None):
+        self.start_drag_pos = None
+        self.attribute = attribute
+        self.start_drag_pos = None
+        self.draging = False
+        self.name = ""
+        self.setFlags(QGraphicsItem.ItemIsMovable | QGraphicsItem.ItemIsSelectable)
+        self.controller = ComponentFrameLine(self)
+        self.controller.setVisible(False)
+        self.setPos(self.attribute["X"],self.attribute["Y"])
+        self.setLayerTransform()
+        self.setOpacity(self.attribute["Opacity"])
+        self.connect("X", self.move_x)
+        self.connect("Y", self.move_y)
+        self.connect("Skew X", self.setLayerTransform)
+        self.connect("Skew Y", self.setLayerTransform)
+        self.connect("Rotation", self.setLayerTransform)
+        self.connect("Opacity", self.setLayerOpacity)
+        self.connect("Display", self.display)
 
-    def validity_testing(self,value,typ):
-        try:
-            return typ(value)
-        except:
-            return self.compilation(value)
-        
-    def compilation(self,script):
-        return None
-
-    def connect(self, key, external_signal, external_method=None):
-        if key not in self.attributes:
-            raise NameError(f"{key} not in attribute")
-        internal_signal = getattr(self, "_" + key, False)
-        internal_method = getattr(self, key, False)
-
-        def set_value(value):
-            if internal_method:
-                self.attributes[key] = value
-                internal_method(value)
-            else:
-                print(f"WARNING: implementation {key} methods may be required")
-
-        external_signal.connect(set_value)
-        if external_method is not None and internal_signal:
-            internal_signal.connect(external_method)
-
-    def get_attributes(self):
-        return self.attributes
-
-    def paintEvent(self, event):
-        """
-        統一處理 alignment 偏移、rotation 旋轉和 skew 變換
-        - alignment: 決定繪製錨點 (tl, tc, tr, cl, cc, cr, bl, bc, br)
-        - rotation: 以物件座標原點為軸旋轉 (0-360 度)
-        - skew_x: y 軸順時針旋轉角度 (-90 ~ 90)，圖形變成平行四邊形
-        - skew_y: x 軸順時針旋轉角度 (-90 ~ 90)
-        """
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.setRenderHint(QPainter.SmoothPixmapTransform)
-
-        # 安全獲取屬性值（沒有這些屬性的物件使用預設值）
-        align_state = getattr(self, '_align_state', 'tl')
-        rotation = getattr(self, '_rotation_angle', 0)
-        skew_x = getattr(self, '_skew_x_value', 0)
-        skew_y = getattr(self, '_skew_y_value', 0)
-
-        # 限制 skew 範圍並檢查是否消失
-        skew_x = max(-90, min(90, skew_x))
-        skew_y = max(-90, min(90, skew_y))
-        if abs(skew_x) >= 90 or abs(skew_y) >= 90:
-            painter.end()
-            return
-
-        w, h = self.width(), self.height()
-
-        # 根據 alignment 計算偏移量
-        # 第一個字符: 垂直對齊 (t=top, c=center, b=bottom)
-        # 第二個字符: 水平對齊 (l=left, c=center, r=right)
-        offset_x, offset_y = 0, 0
-
-        if len(align_state) >= 1:
-            v_align = align_state[0]
-            if v_align == 'c':
-                offset_y = -h / 2
-            elif v_align == 'b':
-                offset_y = -h
-            # 't' 不需要偏移
-
-        if len(align_state) >= 2:
-            h_align = align_state[1]
-            if h_align == 'c':
-                offset_x = -w / 2
-            elif h_align == 'r':
-                offset_x = -w
-            # 'l' 不需要偏移
-
-        # 建立變換矩陣
-        transform = QTransform()
-
-        # 1. 先根據 alignment 偏移原點
-        transform.translate(offset_x, offset_y)
-
-        # 2. 應用 rotation 旋轉（以物件座標原點為軸）
-        transform.rotate(rotation)
-
-        # 3. 應用 skew 變換
-        # skew_x: y 軸順時針旋轉，使用 shear 的水平分量
-        # skew_y: x 軸順時針旋轉，使用 shear 的垂直分量
-        # shear(sh, sv): x' = x + sh*y, y' = sv*x + y
-        shear_h = math.tan(math.radians(skew_x))
-        shear_v = math.tan(math.radians(skew_y))
-        transform.shear(shear_h, shear_v)
-
-        painter.setTransform(transform)
-
-        # 呼叫子類的繪製方法
-        self._drawContent(painter)
-
-        painter.end()
-
-    def _drawContent(self, painter):
-        """
-        子類重寫此方法來繪製內容
-        painter 已經套用了 alignment 和 skew 變換
-        """
+    def lua_translator(self):
         pass
 
-# ============================================================================
-# Common Classes Cache (延遲建立)
-# ============================================================================
-_common_classes = {}
-
-def common_factory(common_type):
-    """
-    取得或建立 common 類別
-    common_type: "position", "transform", "size", "color", "display",
-                 "interaction", "shadow", "outline", "shader", "blend",
-                 "anim_scale", "protected"
-    """
-    if common_type in _common_classes:
-        return _common_classes[common_type]
-
-    # Position - 基礎定位屬性
-    if common_type == "position":
-        class Position(Component):
-            _x = pyqtSignal(object)
-            _y = pyqtSignal(object)
-            _rotation = pyqtSignal(object)
-            _opacity = pyqtSignal(object)
-            _alignment = pyqtSignal(object)
-
-            def _init_position(self):
-                """初始化 Position 屬性（由子類調用）"""
-                self._opacity_effect = QGraphicsOpacityEffect(self)
-                self._opacity_effect.setOpacity(1.0)
-                self._rotation_angle = 0
-                self._align_state = "tl"
-
-            def x(self, value=None):
-                value = self.validity_testing(value, int)
-                if value is not None:
-                    self.move(value, self.y())
-                    self._x.emit(value)
-                return super().x()
-
-            def y(self, value=None):
-                value = self.validity_testing(value, int)
-                if value is not None:
-                    self.move(self.x(), value)
-                    self._y.emit(value)
-                return super().y()
-
-            def rotation(self, value=None):
-                value = self.validity_testing(value, int)
-                if value is not None:
-                    self._rotation_angle = value
-                    self.update()
-                    self._rotation.emit(value)
-                return self._rotation_angle
-
-            def opacity(self, value=None):
-                value = self.validity_testing(value, int)
-                if value is not None:
-                    self._opacity_effect.setOpacity(value * 0.01)
-                    self.setGraphicsEffect(self._opacity_effect)
-                    self._opacity.emit(value)
-                return self._opacity_effect.opacity()
-
-            def alignment(self, value=None):
-                """
-                設定對齊方式，由 paintEvent 處理繪製偏移
-                value: 兩個字符的字串
-                  - 第一個字符: 垂直對齊 (t=top, c=center, b=bottom)
-                  - 第二個字符: 水平對齊 (l=left, c=center, r=right)
-                例如: "cc" = 中心對齊, "tl" = 左上對齊, "br" = 右下對齊
-                """
-                value = self.validity_testing(value, str)
-                if value is None:
-                    return self._align_state
-                self._align_state = value
-                self.update()
-                self._alignment.emit(value)
-                return self._align_state
-
-        _common_classes[common_type] = Position
-        return Position
-
-    # Transform - 變換屬性
-    elif common_type == "transform":
-        class Transform(Component):
-            _gyro = pyqtSignal(object)
-            _skew_x = pyqtSignal(object)
-            _skew_y = pyqtSignal(object)
-            _scale_x = pyqtSignal(object)
-            _scale_y = pyqtSignal(object)
-
-            def _init_transform(self):
-                """初始化 Transform 屬性（由子類調用）"""
-                self._gyro_value = 0
-                self._skew_x_value = 0
-                self._skew_y_value = 0
-                self._scale_x_value = 100
-                self._scale_y_value = 100
-
-            def gyro(self, value=None):
-                value = self.validity_testing(value, int)
-                if value is not None:
-                    self._gyro_value = value
-                    self.update()
-                    self._gyro.emit(value)
-                return self._gyro_value
-
-            def skew_x(self, value=None):
-                """
-                設定 X 軸傾斜角度 (-90 ~ 90)
-                正值: y 軸順時針旋轉，圖形向右傾斜
-                負值: y 軸逆時針旋轉，圖形向左傾斜
-                ±90 時圖形消失
-                """
-                value = self.validity_testing(value, int)
-                if value is not None:
-                    self._skew_x_value = max(-90, min(90, value))
-                    self.update()
-                    self._skew_x.emit(value)
-                return self._skew_x_value
-
-            def skew_y(self, value=None):
-                """
-                設定 Y 軸傾斜角度 (-90 ~ 90)
-                正值: x 軸順時針旋轉，圖形向下傾斜
-                負值: x 軸逆時針旋轉，圖形向上傾斜
-                ±90 時圖形消失
-                """
-                value = self.validity_testing(value, int)
-                if value is not None:
-                    self._skew_y_value = max(-90, min(90, value))
-                    self.update()
-                    self._skew_y.emit(value)
-                return self._skew_y_value
-
-            def scale_x(self, value=None):
-                value = self.validity_testing(value, int)
-                if value is not None:
-                    self._scale_x_value = value
-                    self.update()
-                    self._scale_x.emit(value)
-                return self._scale_x_value
-
-            def scale_y(self, value=None):
-                value = self.validity_testing(value, int)
-                if value is not None:
-                    self._scale_y_value = value
-                    self.update()
-                    self._scale_y.emit(value)
-                return self._scale_y_value
-
-        _common_classes[common_type] = Transform
-        return Transform
-
-    # Size - 尺寸屬性
-    elif common_type == "size":
-        class Size(Component):
-            _width = pyqtSignal(object)
-            _height = pyqtSignal(object)
-
-            def _init_size(self):
-                """初始化 Size 屬性（由子類調用）"""
-                pass  # Size 使用 QWidget 內建的 width/height
-
-            def width(self, value=None):
-                value = self.validity_testing(value, int)
-                if value is not None:
-                    self.resize(value, self.height())
-                    self._width.emit(value)
-                return super().width()
-
-            def height(self, value=None):
-                value = self.validity_testing(value, int)
-                if value is not None:
-                    self.resize(self.width(), value)
-                    self._height.emit(value)
-                return super().height()
-
-        _common_classes[common_type] = Size
-        return Size
-
-    # Color - 顏色屬性
-    elif common_type == "color":
-        class Color(Component):
-            _color = pyqtSignal(object)
-            _color_dim = pyqtSignal(object)
-
-            def _init_color(self):
-                """初始化 Color 屬性（由子類調用）"""
-                self._color_value = "ffffff"
-                self._color_dim_value = ""
-
-            def color(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._color_value = value
-                    self._color.emit(value)
-                return self._color_value
-
-            def color_dim(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._color_dim_value = value
-                    self._color_dim.emit(value)
-                return self._color_dim_value
-
-        _common_classes[common_type] = Color
-        return Color
-
-    # Display - 顯示屬性
-    elif common_type == "display":
-        class Display(Component):
-            _display = pyqtSignal(object)
-
-            def _init_display(self):
-                """初始化 Display 屬性（由子類調用）"""
-                self._display_value = "bd"
-
-            def display(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._display_value = value
-                    self._display.emit(value)
-                return self._display_value
-
-        _common_classes[common_type] = Display
-        return Display
-
-    # Interaction - 互動屬性
-    elif common_type == "interaction":
-        class Interaction(Component):
-            _tap_action = pyqtSignal(object)
-
-            def _init_interaction(self):
-                """初始化 Interaction 屬性（由子類調用）"""
-                self._tap_action_value = ""
-
-            def tap_action(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._tap_action_value = value
-                    self._tap_action.emit(value)
-                return self._tap_action_value
-
-        _common_classes[common_type] = Interaction
-        return Interaction
-
-    # Shadow - 陰影效果
-    elif common_type == "shadow":
-        class Shadow(Component):
-            _shadow = pyqtSignal(object)
-            _w_color = pyqtSignal(object)
-            _w_distance = pyqtSignal(object)
-            _w_opacity = pyqtSignal(object)
-
-            def _init_shadow(self):
-                """初始化 Shadow 屬性（由子類調用）"""
-                self._shadow_value = ""
-                self._w_color_value = "000000"
-                self._w_distance_value = 4
-                self._w_opacity_value = 100
-
-            def shadow(self, value=None):
-                # 實作複雜，先 pass
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._shadow_value = value
-                    self._shadow.emit(value)
-                return self._shadow_value
-
-            def w_color(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._w_color_value = value
-                    self._w_color.emit(value)
-                return self._w_color_value
-
-            def w_distance(self, value=None):
-                value = self.validity_testing(value, int)
-                if value is not None:
-                    self._w_distance_value = value
-                    self._w_distance.emit(value)
-                return self._w_distance_value
-
-            def w_opacity(self, value=None):
-                value = self.validity_testing(value, int)
-                if value is not None:
-                    self._w_opacity_value = value
-                    self._w_opacity.emit(value)
-                return self._w_opacity_value
-
-        _common_classes[common_type] = Shadow
-        return Shadow
-
-    # Outline - 描邊效果
-    elif common_type == "outline":
-        class Outline(Component):
-            _outline = pyqtSignal(object)
-            _o_color = pyqtSignal(object)
-            _o_size = pyqtSignal(object)
-            _o_opacity = pyqtSignal(object)
-
-            def _init_outline(self):
-                """初始化 Outline 屬性（由子類調用）"""
-                self._outline_value = ""
-                self._o_color_value = "000000"
-                self._o_size_value = 2
-                self._o_opacity_value = 100
-
-            def outline(self, value=None):
-                # 實作複雜，先 pass
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._outline_value = value
-                    self._outline.emit(value)
-                return self._outline_value
-
-            def o_color(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._o_color_value = value
-                    self._o_color.emit(value)
-                return self._o_color_value
-
-            def o_size(self, value=None):
-                value = self.validity_testing(value, int)
-                if value is not None:
-                    self._o_size_value = value
-                    self._o_size.emit(value)
-                return self._o_size_value
-
-            def o_opacity(self, value=None):
-                value = self.validity_testing(value, int)
-                if value is not None:
-                    self._o_opacity_value = value
-                    self._o_opacity.emit(value)
-                return self._o_opacity_value
-
-        _common_classes[common_type] = Outline
-        return Outline
-
-    # Shader - 著色器效果
-    elif common_type == "shader":
-        class Shader(Component):
-            _shader = pyqtSignal(object)
-            _u_1 = pyqtSignal(object)
-            _u_2 = pyqtSignal(object)
-            _u_3 = pyqtSignal(object)
-            _u_4 = pyqtSignal(object)
-            _u_5 = pyqtSignal(object)
-
-            def _init_shader(self):
-                """初始化 Shader 屬性（由子類調用）"""
-                self._shader_value = ""
-                self._u_1_value = ""
-                self._u_2_value = ""
-                self._u_3_value = ""
-                self._u_4_value = ""
-                self._u_5_value = ""
-
-            def shader(self, value=None):
-                # 實作複雜，先 pass
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._shader_value = value
-                    self._shader.emit(value)
-                return self._shader_value
-
-            def u_1(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._u_1_value = value
-                    self._u_1.emit(value)
-                return self._u_1_value
-
-            def u_2(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._u_2_value = value
-                    self._u_2.emit(value)
-                return self._u_2_value
-
-            def u_3(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._u_3_value = value
-                    self._u_3.emit(value)
-                return self._u_3_value
-
-            def u_4(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._u_4_value = value
-                    self._u_4.emit(value)
-                return self._u_4_value
-
-            def u_5(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._u_5_value = value
-                    self._u_5.emit(value)
-                return self._u_5_value
-
-        _common_classes[common_type] = Shader
-        return Shader
-
-    # Blend - 混合模式
-    elif common_type == "blend":
-        class Blend(Component):
-            _blend_mode = pyqtSignal(object)
-
-            def _init_blend(self):
-                """初始化 Blend 屬性（由子類調用）"""
-                self._blend_mode_value = ""
-
-            def blend_mode(self, value=None):
-                # 實作複雜，先 pass
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._blend_mode_value = value
-                    self._blend_mode.emit(value)
-                return self._blend_mode_value
-
-        _common_classes[common_type] = Blend
-        return Blend
-
-    # AnimScale - 動畫縮放
-    elif common_type == "anim_scale":
-        class AnimScale(Component):
-            _anim_scale_x = pyqtSignal(object)
-            _anim_scale_y = pyqtSignal(object)
-
-            def _init_anim_scale(self):
-                """初始化 AnimScale 屬性（由子類調用）"""
-                self._anim_scale_x_value = ""
-                self._anim_scale_y_value = ""
-
-            def anim_scale_x(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._anim_scale_x_value = value
-                    self._anim_scale_x.emit(value)
-                return self._anim_scale_x_value
-
-            def anim_scale_y(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._anim_scale_y_value = value
-                    self._anim_scale_y.emit(value)
-                return self._anim_scale_y_value
-
-        _common_classes[common_type] = AnimScale
-        return AnimScale
-
-    # Protected - 保護屬性
-    elif common_type == "protected":
-        class Protected(Component):
-            _protected = pyqtSignal(object)
-
-            def _init_protected(self):
-                """初始化 Protected 屬性（由子類調用）"""
-                self._protected_value = ""
-
-            def protected(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._protected_value = value
-                    self._protected.emit(value)
-                return self._protected_value
-
-        _common_classes[common_type] = Protected
-        return Protected
-
-    else:
-        raise ValueError(f"Unknown common type: {common_type}")
+    def rename(self, value):
+        self.name = value
+
+    def move_x(self, value):
+        self.setPos(float(value), self.y())
+
+    def move_y(self, value):
+        self.setPos(self.x(), float(value))
+
+    def gyro(self, value):
+        return
+
+    def shear(self, matrix, sx, sy):
+        center = self.boundingRect().center()
+        matrix.translate(center.x(), center.y())
+        matrix.shear(-sx, -sy)
+        matrix.translate(-center.x(), -center.y())
+        return matrix
+
+    def rotate(self, matrix):
+        matrix.rotate(float(self.attribute["Rotation"]))
+        return matrix
+
+    def setLayerTransform(self, value=None, matrix=None, combine=False):
+        if matrix is None: matrix=QTransform()
+        matrix = self.shear(
+            matrix,
+            np.tan(np.deg2rad(self.attribute["Skew X"])),
+            np.tan(np.deg2rad(self.attribute["Skew Y"])),
+        )
+        matrix = self.rotate(matrix)
+        QGraphicsItem.setTransform(self, matrix, combine)
+
+    def setLayerOpacity(self, opacity):
+        opacity = float(opacity) / 100
+        QGraphicsItem.setOpacity(self, opacity)
+
+    def display(self, value):
+        if value == "Always":
+            pass
+        if value == "Bright only":
+            pass
+        if value == "Dimmed only":
+            pass
+        if value == "Never":
+            pass
+
+    def connect(self, key, method):
+        self.attribute.signal[key].connect(method)
+
+    def itemChange(self, change, value):
+        if change == QGraphicsItem.ItemSelectedChange:
+            self.controller.setVisible(bool(value) or self.controller.isSelected())
+        return QGraphicsItem.itemChange(self, change, value)
+
+
+class textLayer(QGraphicsTextItem, Component):
+    # text
+    # animation
+    # font
+    # text_size
+    # color
+    # color_dim
+    # anim_scale_x
+    # anim_scale_y
+    # alignment
+    # transform
+    # shader
+    # tap_action
+    # text_effect
+    def __init__(self, attribute: Attribute, parent=None):
+        self.x_offset=0.5
+        self.y_offset=0.5
+        QGraphicsTextItem.__init__(self, parent)
+        Component.init_component(self, attribute)
+        self.setPlainText(attribute.get("Text", ""))
+        # 先設置字體大小，再設置字體樣式
+        self.setTextSize(self.attribute.get("Text size", 12))
+        self.setFontStyle(self.attribute.get("Font", "Arial"))
+        self.setColor(self.attribute.get("Color", "ffffff"))
+        self.setLayerTransform()
+        self.connect("Text", self.setPlainText)
+        self.connect("Font", self.setFontStyle)
+        self.connect("Text size", self.setTextSize)
+        self.connect("Color", self.setColor)
+        self.connect("Alignment",self.setAlignment)
+        # color_dim
+        # animation
+        # anim_scale_x
+        # anim_scale_y
+        # transform
+        # shader
+        # tap_action
+        # text_effect
+
+    def setLayerTransform(self, value=None, matrix=None, combine=False):
+        if matrix is None: matrix=QTransform()
+        matrix=self.shear(
+            matrix,
+            np.tan(np.deg2rad(self.attribute["Skew X"])),
+            np.tan(np.deg2rad(self.attribute["Skew Y"])),)
+        matrix2=QTransform()
+        self.rotate(matrix2)
+        matrix2=self.layerAlignment(matrix2)
+        matrix3=matrix*matrix2
+        QGraphicsItem.setTransform(self,matrix3)
+
+    def layerAlignment(self,matrix):
+        rect = self.boundingRect()
+        align_dx = -rect.width() * self.x_offset
+        align_dy = -rect.height() * self.y_offset
+        matrix.translate(align_dx, align_dy)
+        return matrix
+
+    def setPlainText(self,value):
+        QGraphicsTextItem.setPlainText(self,value)
+        self.setLayerTransform()
+
+    def setFontStyle(self, value):
+        font_manager = FontManager()
+        current_size = self.font().pointSize()
+        if current_size <= 0:
+            current_size = 12  # 預設大小
+        font = font_manager.get_font(value, current_size)
+        self.setFont(font)
+        self.setLayerTransform()
+
+    def setTextSize(self, value):
+        current_font = self.font()
+        size = int(value) if value else 12
+        if size <= 0:
+            size = 12
+        current_font.setPointSize(size)
+        self.setFont(current_font)
+        self.setLayerTransform()
+
+    def setColor(self, value):
+        if not value:
+            value = "ffffff"
+        # 確保顏色值格式正確
+        color_str = value if value.startswith("#") else f"#{value}"
+        self.setDefaultTextColor(QColor(color_str))
+
+    def setAlignment(self,value):
+        if "c" in value.lower():
+            self.x_offset=0.5
+            self.y_offset=0.5
+        if "l" in value:
+            self.x_offset=0
+        elif "i" in value:
+            self.x_offset=1
+        if "B" in value:
+            self.y_offset=1
+        elif "p" in value:
+            self.y_offset=0
+        self.setLayerTransform()
 
 
 # ============================================================================
-# Component Classes Cache (延遲建立)
+# Image Layer (圖片圖層)
 # ============================================================================
-_component_classes = {}
+class imageLayer(QGraphicsPixmapItem, Component):
+    def __init__(self, attribute: Attribute, parent=None):
+        self.x_offset=0.5
+        self.y_offset=0.5
+        QGraphicsPixmapItem.__init__(self, parent)
+        Component.init_component(self, attribute)
+        self.setPixmap(self.attribute["Custom image"])
+        self.connect("Custom image",self.setPixmap)
+        self.connect("Width",self.setLayerTransform)
+        self.connect("Height",self.setLayerTransform)
+        # TODO: Load actual image from Custom image path
 
-# 定義各 component_type 需要繼承的 common 類別
-_component_common_map = {
-    "text": ["position", "transform", "color", "display", "interaction", "anim_scale", "shadow", "outline", "shader", "blend"],
-    "text_animation": ["position", "transform", "color", "display", "shadow", "outline"],
-    "text_curved": ["position", "color", "display", "shadow", "outline"],
-    "text_ring": ["position", "display", "shadow", "outline"],
-    "image": ["position", "transform", "size", "display", "interaction", "anim_scale", "shadow", "shader", "blend", "protected"],
-    "image_gif": ["position", "size", "display"],
-    "image_cutout": ["position", "size", "display"],
-    "video": ["position", "size", "display"],
-    "shape": ["position", "transform", "size", "display", "interaction", "shadow", "outline", "shader", "blend"],
-    "rounded": ["position", "size", "display", "shader"],
-    "ring": ["position", "display"],
-    "ring_image": ["position", "display"],
-    "progress": ["position", "size", "display"],
-    "progress_image": ["position", "size", "display"],
-    "chart": ["position", "size", "display"],
-    "markers": ["position", "display", "shadow"],
-    "markers_hm": ["position", "display", "anim_scale"],
-    "tachy": ["position", "display"],
-    "series": ["position", "display", "shadow", "outline"],
-    "map": ["position", "size", "display"],
-    "gallery_2d": ["position", "size", "display", "protected"],
-    "model_3d": ["display"],
-    "text_3d": ["display"],
-    "camera": ["display"],
-    "light_dir": [],
-    "complication": ["position", "size", "display"],
-    "group": ["position", "transform", "display"],
+    def setPixmap(self, pixmap):
+        pixmap=QPixmap(pixmap)
+        super().setPixmap(pixmap)
+        self.setLayerTransform()
+
+    def setLayerTransform(self, value=None, matrix=None, combine=False):
+        if matrix is None: matrix=QTransform()
+        matrix=self.shear(
+            matrix,
+            np.tan(np.deg2rad(self.attribute["Skew X"])),
+            np.tan(np.deg2rad(self.attribute["Skew Y"])),)
+        matrix2=QTransform()
+        try:
+            pixmap=self.pixmap()
+            sw=self.attribute["Width"]/pixmap.width()
+            sh=self.attribute["Height"]/pixmap.height()
+            matrix2.scale(sw,sh)
+        except:
+            pass
+        self.rotate(matrix2)
+        matrix2=self.layerAlignment(matrix2)
+        matrix3=matrix*matrix2
+        QGraphicsItem.setTransform(self,matrix3)
+
+    def layerAlignment(self,matrix):
+        rect = self.boundingRect()
+        align_dx = -rect.width() * self.x_offset
+        align_dy = -rect.height() * self.y_offset
+        matrix.translate(align_dx, align_dy)
+        return matrix
+
+    def setAlignment(self,value):
+        if "c" in value.lower():
+            self.x_offset=0.5
+            self.y_offset=0.5
+        if "l" in value:
+            self.x_offset=0
+        elif "i" in value:
+            self.x_offset=1
+        if "B" in value:
+            self.y_offset=1
+        elif "p" in value:
+            self.y_offset=0
+        self.setLayerTransform()
+
+# ============================================================================
+# Curved Text Layer (曲線文字圖層)
+# ============================================================================
+class curvedTextLayer(QGraphicsTextItem, Component):
+    def __init__(self, attribute: Attribute, parent=None):
+        QGraphicsTextItem.__init__(self, parent)
+        Component.__init__(self, attribute)
+        self.setPlainText(attribute.get("Text", ""))
+        # TODO: Implement curved text rendering with radius
+
+
+# ============================================================================
+# Shape Layer (形狀圖層)
+# ============================================================================
+class shapeLayer(QGraphicsRectItem, Component):
+    def __init__(self, attribute: Attribute, parent=None):
+        QGraphicsRectItem.__init__(self, parent)
+        Component.__init__(self, attribute)
+        width = attribute.get("Width", 100)
+        height = attribute.get("Height", 100)
+        self.setRect(-width / 2, -height / 2, width, height)
+        color = attribute.get("Color", "#ffffff")
+        if not color.startswith("#"):
+            color = f"#{color}"
+        self.setBrush(QBrush(QColor(color)))
+        self.setPen(QPen(Qt.NoPen))
+
+
+# ============================================================================
+# Marker Layer (標記圖層)
+# ============================================================================
+class markerLayer(QGraphicsRectItem, Component):
+    def __init__(self, attribute: Attribute, parent=None):
+        QGraphicsRectItem.__init__(self, parent)
+        Component.__init__(self, attribute)
+        radius = attribute.get("Radius", 256)
+        self.setRect(-radius, -radius, radius * 2, radius * 2)
+        self.setPen(QPen(QColor("#888888"), 1, Qt.DashLine))
+        self.setBrush(Qt.NoBrush)
+        # TODO: Draw markers around the circle
+
+
+# ============================================================================
+# Tachymeter Layer (測速計圖層)
+# ============================================================================
+class tachymeterLayer(QGraphicsRectItem, Component):
+    def __init__(self, attribute: Attribute, parent=None):
+        QGraphicsRectItem.__init__(self, parent)
+        Component.__init__(self, attribute)
+        radius = attribute.get("Radius", 230)
+        self.setRect(-radius, -radius, radius * 2, radius * 2)
+        self.setPen(QPen(QColor("#888888"), 1, Qt.DashLine))
+        self.setBrush(Qt.NoBrush)
+        # TODO: Draw tachymeter scale
+
+
+# ============================================================================
+# Map Layer (地圖圖層)
+# ============================================================================
+class mapLayer(QGraphicsRectItem, Component):
+    def __init__(self, attribute: Attribute, parent=None):
+        QGraphicsRectItem.__init__(self, parent)
+        Component.__init__(self, attribute)
+        width = attribute.get("Width", 512)
+        height = attribute.get("Height", 512)
+        self.setRect(-width / 2, -height / 2, width, height)
+        self.setBrush(QBrush(QColor("#3a3a3a")))
+        self.setPen(QPen(QColor("#555555"), 1))
+        # TODO: Load map tile from lat/lon
+
+
+# ============================================================================
+# Slideshow Layer (幻燈片圖層)
+# ============================================================================
+class slideshowLayer(QGraphicsRectItem, Component):
+    def __init__(self, attribute: Attribute, parent=None):
+        QGraphicsRectItem.__init__(self, parent)
+        Component.__init__(self, attribute)
+        width = attribute.get("Width", 300)
+        height = attribute.get("Height", 300)
+        self.setRect(-width / 2, -height / 2, width, height)
+        self.setBrush(QBrush(QColor("#444444")))
+        self.setPen(QPen(QColor("#666666"), 1))
+        # TODO: Implement slideshow functionality
+
+
+# ============================================================================
+# Text Ring Layer (環形文字圖層)
+# ============================================================================
+class textRingLayer(QGraphicsRectItem, Component):
+    def __init__(self, attribute: Attribute, parent=None):
+        QGraphicsRectItem.__init__(self, parent)
+        Component.__init__(self, attribute)
+        radius = attribute.get("Radius", 200)
+        self.setRect(-radius, -radius, radius * 2, radius * 2)
+        self.setPen(QPen(QColor("#888888"), 1, Qt.DashLine))
+        self.setBrush(Qt.NoBrush)
+        # TODO: Draw numbers around the ring
+
+
+# ============================================================================
+# Rounded Rectangle Layer (圓角矩形圖層)
+# ============================================================================
+class roundedRectangleLayer(QGraphicsRectItem, Component):
+    def __init__(self, attribute: Attribute, parent=None):
+        QGraphicsRectItem.__init__(self, parent)
+        Component.__init__(self, attribute)
+        width = attribute.get("Width", 300)
+        height = attribute.get("Height", 200)
+        self.setRect(-width / 2, -height / 2, width, height)
+        color = attribute.get("Color", "#ffffff")
+        if not color.startswith("#"):
+            color = f"#{color}"
+        self.setBrush(QBrush(QColor(color)))
+        self.setPen(QPen(Qt.NoPen))
+        # TODO: Apply corner radius
+
+
+# ============================================================================
+# Series Layer (數據系列圖層)
+# ============================================================================
+class seriesLayer(QGraphicsTextItem, Component):
+    def __init__(self, attribute: Attribute, parent=None):
+        QGraphicsTextItem.__init__(self, parent)
+        Component.__init__(self, attribute)
+        self.setPlainText("MON\nTUE\nWED")
+        # TODO: Implement series data display
+
+
+# ============================================================================
+# Complication Layer (複雜功能圖層)
+# ============================================================================
+class complicationLayer(QGraphicsRectItem, Component):
+    def __init__(self, attribute: Attribute, parent=None):
+        QGraphicsRectItem.__init__(self, parent)
+        Component.__init__(self, attribute)
+        width = attribute.get("Width", 100)
+        height = attribute.get("Height", 100)
+        self.setRect(-width / 2, -height / 2, width, height)
+        bg_color = attribute.get("Color background", "#494949")
+        if not bg_color.startswith("#"):
+            bg_color = f"#{bg_color}"
+        self.setBrush(QBrush(QColor(bg_color)))
+        self.setPen(QPen(QColor("#666666"), 1))
+
+
+# ============================================================================
+# Chart Layer (圖表圖層)
+# ============================================================================
+class chartLayer(QGraphicsRectItem, Component):
+    def __init__(self, attribute: Attribute, parent=None):
+        QGraphicsRectItem.__init__(self, parent)
+        Component.__init__(self, attribute)
+        width = attribute.get("Width", 205)
+        height = attribute.get("Height", 76)
+        self.setRect(-width / 2, -height / 2, width, height)
+        self.setBrush(QBrush(QColor("#2a2a2a")))
+        self.setPen(QPen(QColor("#444444"), 1))
+        # TODO: Draw chart
+
+
+# ============================================================================
+# Image Condition Layer (條件圖片圖層)
+# ============================================================================
+class imageCondLayer(QGraphicsRectItem, Component):
+    def __init__(self, attribute: Attribute, parent=None):
+        QGraphicsRectItem.__init__(self, parent)
+        Component.__init__(self, attribute)
+        width = attribute.get("Width", 80)
+        height = attribute.get("Height", 80)
+        self.setRect(-width / 2, -height / 2, width, height)
+        self.setBrush(QBrush(QColor("#555555")))
+        self.setPen(QPen(QColor("#777777"), 1))
+        # TODO: Implement conditional image selection
+
+
+# ============================================================================
+# Image GIF Layer (GIF圖片圖層)
+# ============================================================================
+class imageGifLayer(QGraphicsRectItem, Component):
+    def __init__(self, attribute: Attribute, parent=None):
+        QGraphicsRectItem.__init__(self, parent)
+        Component.__init__(self, attribute)
+        width = attribute.get("Width", 100)
+        height = attribute.get("Height", 100)
+        self.setRect(-width / 2, -height / 2, width, height)
+        self.setBrush(QBrush(QColor("#4a4a4a")))
+        self.setPen(QPen(QColor("#666666"), 1))
+        # TODO: Load and animate GIF
+
+
+# ============================================================================
+# Progress Layer (進度條圖層)
+# ============================================================================
+class progressLayer(QGraphicsRectItem, Component):
+    def __init__(self, attribute: Attribute, parent=None):
+        QGraphicsRectItem.__init__(self, parent)
+        Component.__init__(self, attribute)
+        width = attribute.get("Width", 114)
+        height = attribute.get("Height", 24)
+        self.setRect(-width / 2, -height / 2, width, height)
+        bg_color = attribute.get("Color 3", "#525151")
+        if not bg_color.startswith("#"):
+            bg_color = f"#{bg_color}"
+        self.setBrush(QBrush(QColor(bg_color)))
+        self.setPen(QPen(Qt.NoPen))
+        # TODO: Draw progress indicator
+
+
+# ============================================================================
+# Ring Layer (圓環圖層)
+# ============================================================================
+class ringLayer(QGraphicsRectItem, Component):
+    def __init__(self, attribute: Attribute, parent=None):
+        super().__init__(parent)
+        Component.__init__(self, attribute)
+        radius = attribute.get("Radius outer", 57)
+        self.setRect(-radius, -radius, radius * 2, radius * 2)
+        color = attribute.get("Color", "#ffffff")
+        if not color.startswith("#"):
+            color = f"#{color}"
+        self.setPen(QPen(QColor(color), 4))
+        self.setBrush(Qt.NoBrush)
+        # TODO: Draw ring arc
+
+
+# ============================================================================
+# Markers HM Layer (時分標記圖層)
+# ============================================================================
+class markersHMLayer(QGraphicsRectItem, Component):
+    def __init__(self, attribute: Attribute, parent=None):
+        super().__init__(parent)
+        Component.__init__(self, attribute)
+        radius = attribute.get("Radius", 256)
+        self.setRect(-radius, -radius, radius * 2, radius * 2)
+        self.setPen(QPen(QColor("#888888"), 1, Qt.DashLine))
+        self.setBrush(Qt.NoBrush)
+        # TODO: Draw hour/minute markers
+
+
+# ============================================================================
+# Directional Light Layer (方向光源圖層)
+# ============================================================================
+class directionalLightLayer(QGraphicsRectItem, Component):
+    def __init__(self, attribute: Attribute, parent=None):
+        super().__init__(parent)
+        Component.__init__(self, attribute)
+        self.setRect(-30, -30, 60, 60)
+        color = attribute.get("Color", "#ffffff")
+        if not color.startswith("#"):
+            color = f"#{color}"
+        self.setBrush(QBrush(QColor(color)))
+        self.setPen(QPen(QColor("#ffff00"), 2))
+        # Light indicator
+
+
+# ============================================================================
+# 3D Layer (3D圖層)
+# ============================================================================
+class layer3D(QGraphicsRectItem, Component):
+    def __init__(self, attribute: Attribute, parent=None):
+        super().__init__(parent)
+        Component.__init__(self, attribute)
+        scale_x = attribute.get("Scale X", 40)
+        scale_y = attribute.get("Scale Y", 40)
+        self.setRect(-scale_x / 2, -scale_y / 2, scale_x, scale_y)
+        self.setBrush(QBrush(QColor("#666666")))
+        self.setPen(QPen(QColor("#888888"), 2))
+        # TODO: Implement 3D rendering
+
+
+# ============================================================================
+# Layer Type Mapping (圖層類型映射)
+# ============================================================================
+LAYER_CLASS_MAP = {
+    "textLayer": textLayer,
+    "imageLayer": imageLayer,
+    "curvedTextLayer": curvedTextLayer,
+    "shapeLayer": shapeLayer,
+    "markerLayer": markerLayer,
+    "tachymeterLayer": tachymeterLayer,
+    "mapLayer": mapLayer,
+    "slideshowLayer": slideshowLayer,
+    "textRingLayer": textRingLayer,
+    "roundedRectangleLayer": roundedRectangleLayer,
+    "seriesLayer": seriesLayer,
+    "complicationLayer": complicationLayer,
+    "chartLayer": chartLayer,
+    "imageCondLayer": imageCondLayer,
+    "imageGifLayer": imageGifLayer,
+    "progressLayer": progressLayer,
+    "ringLayer": ringLayer,
+    "markersHMLayer": markersHMLayer,
+    "directionalLightLayer": directionalLightLayer,
+    "layer3D": layer3D,
+    "3DLayer": layer3D,
 }
 
 
-def _init_all_commons(instance, common_types):
-    """
-    呼叫所有 common 類別的 _init_xxx 方法
-    """
-    init_map = {
-        "position": "_init_position",
-        "transform": "_init_transform",
-        "size": "_init_size",
-        "color": "_init_color",
-        "display": "_init_display",
-        "interaction": "_init_interaction",
-        "shadow": "_init_shadow",
-        "outline": "_init_outline",
-        "shader": "_init_shader",
-        "blend": "_init_blend",
-        "anim_scale": "_init_anim_scale",
-        "protected": "_init_protected",
-    }
-    for ct in common_types:
-        init_method_name = init_map.get(ct)
-        if init_method_name:
-            init_method = getattr(instance, init_method_name, None)
-            if init_method:
-                init_method()
-
-
-def components_factory(component_type, attribute):
-    """
-    取得或建立 component 類別實例
-    使用動態多重繼承，繼承對應的 common 類別
-    """
-    if component_type in _component_classes:
-        return _component_classes[component_type](attribute)
-
-    # 取得這個 component_type 需要的 common 類別
-    common_types = _component_common_map.get(component_type, ["position"])
-
-    # 動態建立基底類別列表
-    bases = []
-    for ct in common_types:
-        bases.append(common_factory(ct))
-
-    # 確保至少繼承 Component
-    if not bases:
-        bases = [Component]
-
-    # 根據 component_type 建立對應的類別
-    if component_type == "text":
-        # Text 特殊處理：繼承 WatchFaceText
-        # WatchFaceText 必須放在最前面，確保 super().__init__ 正確呼叫 QLabel
-        # 不使用動態繼承 bases，因為會破壞 WatchFaceText 的 MRO
-        class Text(WatchFaceText):
-            _text = pyqtSignal(object)
-            _text_size = pyqtSignal(object)
-            _font = pyqtSignal(object)
-            _transform = pyqtSignal(object)
-            _name = pyqtSignal(object)
-            # 從 common classes 複製信號定義
-            _x = pyqtSignal(object)
-            _y = pyqtSignal(object)
-            _rotation = pyqtSignal(object)
-            _opacity = pyqtSignal(object)
-            _alignment = pyqtSignal(object)
-            _gyro = pyqtSignal(object)
-            _skew_x = pyqtSignal(object)
-            _skew_y = pyqtSignal(object)
-            _scale_x = pyqtSignal(object)
-            _scale_y = pyqtSignal(object)
-            _color = pyqtSignal(object)
-            _color_dim = pyqtSignal(object)
-            _display = pyqtSignal(object)
-            _tap_action = pyqtSignal(object)
-            _anim_scale_x = pyqtSignal(object)
-            _anim_scale_y = pyqtSignal(object)
-            _shadow = pyqtSignal(object)
-            _w_color = pyqtSignal(object)
-            _w_distance = pyqtSignal(object)
-            _w_opacity = pyqtSignal(object)
-            _outline = pyqtSignal(object)
-            _o_color = pyqtSignal(object)
-            _o_size = pyqtSignal(object)
-            _o_opacity = pyqtSignal(object)
-            _shader = pyqtSignal(object)
-            _u_1 = pyqtSignal(object)
-            _u_2 = pyqtSignal(object)
-            _u_3 = pyqtSignal(object)
-            _u_4 = pyqtSignal(object)
-            _u_5 = pyqtSignal(object)
-            _blend_mode = pyqtSignal(object)
-
-            def __init__(self, attributes=None, parent=None):
-                text_content = attributes.get("text", "") if attributes else ""
-                super().__init__(text_content, parent)
-
-                # 初始化 Component 屬性
-                self.attributes = attributes if attributes else {}
-                self.setAttribute(Qt.WA_TranslucentBackground)
-
-                # 手動初始化所有 common 屬性
-                # Position
-                self._opacity_effect = QGraphicsOpacityEffect(self)
-                self._opacity_effect.setOpacity(1.0)
-                self._rotation_angle = 0
-                self._align_state = "tl"
-                # Transform
-                self._gyro_value = 0
-                self._skew_x_value = 0
-                self._skew_y_value = 0
-                self._scale_x_value = 100
-                self._scale_y_value = 100
-                # Color
-                self._color_value = "ffffff"
-                self._color_dim_value = ""
-                # Display
-                self._display_value = "bd"
-                # Interaction
-                self._tap_action_value = ""
-                # AnimScale
-                self._anim_scale_x_value = ""
-                self._anim_scale_y_value = ""
-                # Shadow
-                self._shadow_value = ""
-                self._w_color_value = "000000"
-                self._w_distance_value = 4
-                self._w_opacity_value = 100
-                # Outline
-                self._outline_value = ""
-                self._o_color_value = "000000"
-                self._o_size_value = 2
-                self._o_opacity_value = 100
-                # Shader
-                self._shader_value = ""
-                self._u_1_value = ""
-                self._u_2_value = ""
-                self._u_3_value = ""
-                self._u_4_value = ""
-                self._u_5_value = ""
-                # Blend
-                self._blend_mode_value = ""
-
-                # Text 專屬屬性
-                self._text_value = text_content
-                self._text_size_value = 40
-                self._font_value = "Roboto-Regular"
-                self._transform_value = "n"
-                self._name_value = "Text Layer"
-
-                # 初始調整大小
-                self._adjustSize()
-
-            def _adjustSize(self):
-                """根據文字內容、字型和 alignment 自動調整 Label 大小"""
-                font = QLabel.font(self)
-                fm = QFontMetrics(font)
-                text = self._text_value if hasattr(self, '_text_value') else ''
-                # 計算文字所需的寬度和高度，加上一些 padding
-                text_width = fm.horizontalAdvance(text) + 10
-                text_height = fm.height() + 6
-
-                # 儲存文字實際大小供 paintEvent 使用
-                self._text_render_width = text_width
-                self._text_render_height = text_height
-
-                # 根據 alignment 計算 Label 需要的大小
-                # alignment 偏移是根據文字大小計算，Label 要能容納偏移後的文字
-                align_state = getattr(self, '_align_state', 'tl')
-
-                final_width = text_width
-                final_height = text_height
-
-                if len(align_state) >= 1:
-                    v_align = align_state[0]
-                    if v_align == 'c':
-                        # 中心對齊：文字上移 text_height/2，需要額外空間
-                        final_height = text_height + text_height // 2
-                    elif v_align == 'b':
-                        # 底部對齊：文字上移 text_height，需要雙倍空間
-                        final_height = text_height * 2
-
-                if len(align_state) >= 2:
-                    h_align = align_state[1]
-                    if h_align == 'c':
-                        final_width = text_width + text_width // 2
-                    elif h_align == 'r':
-                        final_width = text_width * 2
-
-                # 設定最小大小，確保文字不會被截斷
-                self.setMinimumSize(max(final_width, 20), max(final_height, 20))
-                self.resize(max(final_width, 20), max(final_height, 20))
-                self.update()
-
-            def connect(self, key, external_signal, external_method=None):
-                if key not in self.attributes:
-                    raise NameError(f"{key} not in attribute")
-                internal_signal = getattr(self, "_" + key, False)
-                internal_method = getattr(self, key, False)
-
-                def set_value(value):
-                    if internal_method:
-                        self.attributes[key] = value
-                        internal_method(value)
-                    else:
-                        print(f"WARNING: implementation {key} methods may be required")
-
-                external_signal.connect(set_value)
-                if external_method is not None and internal_signal:
-                    internal_signal.connect(external_method)
-
-            def get_attributes(self):
-                return self.attributes
-
-            def paintEvent(self, event):
-                """
-                統一處理 alignment 偏移、rotation 旋轉和 skew 變換
-                - alignment: 決定繪製錨點 (tl, tc, tr, cl, cc, cr, bl, bc, br)
-                - rotation: 以物件座標原點為軸旋轉 (0-360 度)
-                - skew_x: y 軸順時針旋轉角度 (-90 ~ 90)，圖形變成平行四邊形
-                - skew_y: x 軸順時針旋轉角度 (-90 ~ 90)
-                """
-                painter = QPainter(self)
-                painter.setRenderHint(QPainter.Antialiasing)
-                painter.setRenderHint(QPainter.SmoothPixmapTransform)
-
-                # 安全獲取屬性值（沒有這些屬性的物件使用預設值）
-                align_state = getattr(self, '_align_state', 'tl')
-                rotation = getattr(self, '_rotation_angle', 0)
-                skew_x = getattr(self, '_skew_x_value', 0)
-                skew_y = getattr(self, '_skew_y_value', 0)
-
-                # 限制 skew 範圍並檢查是否消失
-                skew_x = max(-90, min(90, skew_x))
-                skew_y = max(-90, min(90, skew_y))
-                if abs(skew_x) >= 90 or abs(skew_y) >= 90:
-                    painter.end()
-                    return
-
-                # 使用文字實際大小計算偏移量（而不是 Label 大小）
-                text_w = getattr(self, '_text_render_width', self.width())
-                text_h = getattr(self, '_text_render_height', self.height())
-
-                # 根據 alignment 計算偏移量
-                # 第一個字符: 垂直對齊 (t=top, c=center, b=bottom)
-                # 第二個字符: 水平對齊 (l=left, c=center, r=right)
-                offset_x, offset_y = 0, 0
-
-                if len(align_state) >= 1:
-                    v_align = align_state[0]
-                    if v_align == 'c':
-                        offset_y = -text_h / 2
-                    elif v_align == 'b':
-                        offset_y = -text_h
-                    # 't' 不需要偏移
-
-                if len(align_state) >= 2:
-                    h_align = align_state[1]
-                    if h_align == 'c':
-                        offset_x = -text_w / 2
-                    elif h_align == 'r':
-                        offset_x = -text_w
-                    # 'l' 不需要偏移
-
-                # 建立變換矩陣
-                transform = QTransform()
-
-                # 1. 先根據 alignment 偏移原點
-                transform.translate(offset_x, offset_y)
-
-                # 2. 應用 rotation 旋轉（以物件座標原點為軸）
-                transform.rotate(rotation)
-
-                # 3. 應用 skew 變換
-                # skew_x: y 軸順時針旋轉，使用 shear 的水平分量
-                # skew_y: x 軸順時針旋轉，使用 shear 的垂直分量
-                # shear(sh, sv): x' = x + sh*y, y' = sv*x + y
-                shear_h = math.tan(math.radians(skew_x))
-                shear_v = math.tan(math.radians(skew_y))
-                transform.shear(shear_h, shear_v)
-
-                painter.setTransform(transform)
-
-                # 呼叫子類的繪製方法
-                self._drawContent(painter)
-
-                painter.end()
-
-            def _drawContent(self, painter):
-                """繪製文字內容"""
-                # 取得文字顏色
-                color = getattr(self, '_color_value', 'ffffff')
-                painter.setPen(QColor(f"#{color}"))
-
-                # 取得字型 (使用 QLabel.font 避免呼叫自訂的 font() 方法)
-                font = QLabel.font(self)
-                painter.setFont(font)
-
-                # 使用文字實際大小作為繪製區域
-                text_w = getattr(self, '_text_render_width', self.width())
-                text_h = getattr(self, '_text_render_height', self.height())
-                rect = QRect(0, 0, text_w, text_h)
-
-                # 繪製文字
-                text = self._text_value if hasattr(self, '_text_value') else ''
-                painter.drawText(rect, Qt.AlignCenter, text)
-
-            def validity_testing(self,value,typ):
-                try:
-                    return typ(value)
-                except:
-                    return self.compilation(value)
-                
-            def compilation(self,script):
-                return None
-
-            # Text 專屬方法
-            def text(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._text_value = value
-                    self.setText(value)
-                    self._adjustSize()
-                    self._text.emit(value)
-                return self._text_value
-
-            def text_size(self, value=None):
-                value = self.validity_testing(value, int)
-                if value is not None:
-                    self._text_size_value = value
-                    self.set_font_size(value)
-                    self._adjustSize()
-                    self._text_size.emit(value)
-                return self._text_size_value
-
-            def font(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._font_value = value
-                    self.set_font(value)
-                    self._adjustSize()
-                    self._font.emit(value)
-                return self._font_value
-
-            def transform(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is None:
-                    return self._transform_value
-                self._transform_value = value
-                if value == "n":
-                    self.setText(self._text_value)
-                if value == "u":
-                    self.setText(self._text_value.upper())
-                if value == "l":
-                    self.setText(self._text_value.lower())
-                self._transform.emit(value)
-                return self._transform_value
-
-            def name(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._name_value = value
-                    self._name.emit(value)
-                return self._name_value
-
-            # Position 方法
-            def x(self, value=None):
-                value = self.validity_testing(value, int)
-                if value is not None:
-                    self.move(value, self.pos().y())
-                    self._x.emit(value)
-                return self.pos().x()
-
-            def y(self, value=None):
-                value = self.validity_testing(value, int)
-                if value is not None:
-                    self.move(self.pos().x(), value)
-                    self._y.emit(value)
-                return self.pos().y()
-
-            def rotation(self, value=None):
-                value = self.validity_testing(value, int)
-                if value is not None:
-                    self._rotation_angle = value
-                    self.update()
-                    self._rotation.emit(value)
-                return self._rotation_angle
-
-            def opacity(self, value=None):
-                value = self.validity_testing(value, int)
-                if value is not None:
-                    self._opacity_effect.setOpacity(value * 0.01)
-                    self.setGraphicsEffect(self._opacity_effect)
-                    self._opacity.emit(value)
-                return self._opacity_effect.opacity()
-
-            def alignment(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is None:
-                    return self._align_state
-                self._align_state = value
-                self._adjustSize()
-                self._alignment.emit(value)
-                return self._align_state
-
-            # Transform 方法
-            def gyro(self, value=None):
-                value = self.validity_testing(value, int)
-                if value is not None:
-                    self._gyro_value = value
-                    self.update()
-                    self._gyro.emit(value)
-                return self._gyro_value
-
-            def skew_x(self, value=None):
-                value = self.validity_testing(value, int)
-                if value is not None:
-                    self._skew_x_value = max(-90, min(90, value))
-                    self.update()
-                    self._skew_x.emit(value)
-                return self._skew_x_value
-
-            def skew_y(self, value=None):
-                value = self.validity_testing(value, int)
-                if value is not None:
-                    self._skew_y_value = max(-90, min(90, value))
-                    self.update()
-                    self._skew_y.emit(value)
-                return self._skew_y_value
-
-            def scale_x(self, value=None):
-                value = self.validity_testing(value, int)
-                if value is not None:
-                    self._scale_x_value = value
-                    self.update()
-                    self._scale_x.emit(value)
-                return self._scale_x_value
-
-            def scale_y(self, value=None):
-                value = self.validity_testing(value, int)
-                if value is not None:
-                    self._scale_y_value = value
-                    self.update()
-                    self._scale_y.emit(value)
-                return self._scale_y_value
-
-            # Color 方法
-            def color(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._color_value = value
-                    self._color.emit(value)
-                return self._color_value
-
-            def color_dim(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._color_dim_value = value
-                    self._color_dim.emit(value)
-                return self._color_dim_value
-
-            # Display 方法
-            def display(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._display_value = value
-                    self._display.emit(value)
-                return self._display_value
-
-            # Interaction 方法
-            def tap_action(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._tap_action_value = value
-                    self._tap_action.emit(value)
-                return self._tap_action_value
-
-            # AnimScale 方法
-            def anim_scale_x(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._anim_scale_x_value = value
-                    self._anim_scale_x.emit(value)
-                return self._anim_scale_x_value
-
-            def anim_scale_y(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._anim_scale_y_value = value
-                    self._anim_scale_y.emit(value)
-                return self._anim_scale_y_value
-
-            # Shadow 方法
-            def shadow(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._shadow_value = value
-                    self._shadow.emit(value)
-                return self._shadow_value
-
-            def w_color(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._w_color_value = value
-                    self._w_color.emit(value)
-                return self._w_color_value
-
-            def w_distance(self, value=None):
-                value = self.validity_testing(value, int)
-                if value is not None:
-                    self._w_distance_value = value
-                    self._w_distance.emit(value)
-                return self._w_distance_value
-
-            def w_opacity(self, value=None):
-                value = self.validity_testing(value, int)
-                if value is not None:
-                    self._w_opacity_value = value
-                    self._w_opacity.emit(value)
-                return self._w_opacity_value
-
-            # Outline 方法
-            def outline(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._outline_value = value
-                    self._outline.emit(value)
-                return self._outline_value
-
-            def o_color(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._o_color_value = value
-                    self._o_color.emit(value)
-                return self._o_color_value
-
-            def o_size(self, value=None):
-                value = self.validity_testing(value, int)
-                if value is not None:
-                    self._o_size_value = value
-                    self._o_size.emit(value)
-                return self._o_size_value
-
-            def o_opacity(self, value=None):
-                value = self.validity_testing(value, int)
-                if value is not None:
-                    self._o_opacity_value = value
-                    self._o_opacity.emit(value)
-                return self._o_opacity_value
-
-            # Shader 方法
-            def shader(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._shader_value = value
-                    self._shader.emit(value)
-                return self._shader_value
-
-            def u_1(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._u_1_value = value
-                    self._u_1.emit(value)
-                return self._u_1_value
-
-            def u_2(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._u_2_value = value
-                    self._u_2.emit(value)
-                return self._u_2_value
-
-            def u_3(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._u_3_value = value
-                    self._u_3.emit(value)
-                return self._u_3_value
-
-            def u_4(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._u_4_value = value
-                    self._u_4.emit(value)
-                return self._u_4_value
-
-            def u_5(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._u_5_value = value
-                    self._u_5.emit(value)
-                return self._u_5_value
-
-            # Blend 方法
-            def blend_mode(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._blend_mode_value = value
-                    self._blend_mode.emit(value)
-                return self._blend_mode_value
-
-        _component_classes[component_type] = Text
-        return Text(attribute)
-
-    elif component_type == "image":
-        class Image(*tuple(bases)):
-            _path = pyqtSignal(object)
-            _name = pyqtSignal(object)
-
-            def __init__(self, attributes=None, parent=None):
-                # 呼叫第一個 base 類別的 __init__（最終會呼叫 Component.__init__）
-                super().__init__(attributes, parent)
-
-                # 呼叫所有 common 類別的 _init_xxx 方法
-                _init_all_commons(self, common_types)
-
-                # Image 專屬屬性
-                self._path_value = ""
-                self._name_value = "Image Layer"
-
-            def path(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._path_value = value
-                    self._path.emit(value)
-                return self._path_value
-
-            def name(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._name_value = value
-                    self._name.emit(value)
-                return self._name_value
-
-        _component_classes[component_type] = Image
-        return Image(attribute)
-
-    elif component_type == "shape":
-        class Shape(*tuple(bases)):
-            _shape = pyqtSignal(object)
-            _name = pyqtSignal(object)
-
-            def __init__(self, attributes=None, parent=None):
-                super().__init__(attributes, parent)
-
-                # 呼叫所有 common 類別的 _init_xxx 方法
-                _init_all_commons(self, common_types)
-
-                # Shape 專屬屬性
-                self._shape_value = "Square"
-                self._name_value = "Shape Layer"
-
-            def shape(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._shape_value = value
-                    self._shape.emit(value)
-                return self._shape_value
-
-            def name(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._name_value = value
-                    self._name.emit(value)
-                return self._name_value
-
-        _component_classes[component_type] = Shape
-        return Shape(attribute)
-
-    elif component_type == "group":
-        class Group(*tuple(bases)):
-            _name = pyqtSignal(object)
-
-            def __init__(self, attributes=None, parent=None):
-                super().__init__(attributes, parent)
-
-                # 呼叫所有 common 類別的 _init_xxx 方法
-                _init_all_commons(self, common_types)
-
-                # Group 專屬屬性
-                self._name_value = "Group"
-
-            def name(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._name_value = value
-                    self._name.emit(value)
-                return self._name_value
-
-        _component_classes[component_type] = Group
-        return Group(attribute)
-
-    else:
-        # 通用的 component 類別（用到再擴充）
-        # 捕獲 component_type 到閉包中
-        _ct = component_type
-
-        class GenericComponent(*tuple(bases)):
-            _name = pyqtSignal(object)
-
-            def __init__(self, attributes=None, parent=None):
-                super().__init__(attributes, parent)
-
-                # 呼叫所有 common 類別的 _init_xxx 方法
-                _init_all_commons(self, common_types)
-
-                # GenericComponent 專屬屬性
-                self._name_value = _ct
-
-            def name(self, value=None):
-                value = self.validity_testing(value, str)
-                if value is not None:
-                    self._name_value = value
-                    self._name.emit(value)
-                return self._name_value
-
-        _component_classes[component_type] = GenericComponent
-        return GenericComponent(attribute)
+def create_layer(layer_type: str, attribute: Attribute, parent=None):
+    """根據圖層類型創建對應的圖層實例"""
+    layer_class = LAYER_CLASS_MAP.get(layer_type, textLayer)
+    return layer_class(attribute, parent)

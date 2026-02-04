@@ -34,8 +34,10 @@ A fully-featured Lua script editor for WatchMaker watch face scripting:
 - Standardized component communication patterns
 
 ### Planned Features (Next Version)
+- Bug fixes
+- Implement undo/redo functionality for the editor
 - UI interaction logic implementation for the main application
-- Full implementation of all confirmed component features
+- Full implementation of all confirmed component features(Animation attributes will be implemented only after other important features are completed.)
 - Watch face preview functionality
 
 ## Requirements
@@ -116,6 +118,9 @@ This project is currently in development.
 - Established base component architecture for all UI elements
 - Implemented component base classes and inheritance hierarchy
 - Standardized component communication patterns
+- Completed common attributes for all Layer types
+- Implemented partial attributes for TextLayer and ImageLayer
+- Various bug fixes
 
 ### v0.2.0
 - Added Lua Script Editor with full syntax highlighting
