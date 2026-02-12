@@ -835,11 +835,18 @@ class AttributeForm(QScrollArea):
         self._vlayout.setSpacing(4)
 
     def back_container(self):
+        import components.common as common_defs
         hlayout=QHBoxLayout()
         back=QPushButton("< Back")
         home=QPushButton("Home")
+        layer_combo=QComboBox()
+        layer_combo.setObjectName("attrCombo")
+        layer_names=[name for name in common_defs.__all__ if name!="baseLayer" and name!="animationWidget"]
+        layer_combo.addItems(layer_names)
+        if self._layer_type and self._layer_type in layer_names:
+            layer_combo.setCurrentText(self._layer_type)
         hlayout.addWidget(back)
-        hlayout.addStretch()
+        hlayout.addWidget(layer_combo)
         hlayout.addWidget(home)
         back.clicked.connect(self.go_back.emit)
         home.clicked.connect(self.go_home.emit)
@@ -988,12 +995,12 @@ class AttributePanal(StackWidget):
         )
         self.setAcceptDrops(True)
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
-        self.opened_widget=[]
         self.summon_widget.connect(self._on_summon_widget)
         self.tip_signal = tip_signal
         self._attribute_cache = {}  # {hash_id: 已生成的屬性列表}
         self._widget_views = {}  # {container_id: widget_view} 儲存每個 container 的 widget 視窗
         home=AttributeForm(getattr(components,"watchSetting"))
+        self.opened_widget=[home]
         self.addWidget(home,1)
         self.id_stack = [2]
 
@@ -1002,11 +1009,12 @@ class AttributePanal(StackWidget):
         if self.opened_widget==[]:
             self.toggle_widget(1)
             return
-        self.toggle_widget(self.opened_widget.pop())
+        self.toggle_widget(self.opened_widget[-1])
+        print(self.opened_widget)
 
     def go_home(self):
         self.toggle_widget(1)
-        self.opened_widget=[]
+        self.opened_widget=[self.find(1)]
 
     def toggle_widget(self,widget):
         if isinstance(widget,QWidget):
@@ -1029,16 +1037,19 @@ class AttributePanal(StackWidget):
         form.request_script_editor.connect(self.request_script_editor.emit)
         form.go_back.connect(self.go_back)
         form.go_home.connect(self.go_home)
-        self.addWidget(form, name)
+        self.addWidget(form, name,False)
+        self.setCurrentWidget(self.find(name))
         
     def setCurrentIndex(self, index):
         super().setCurrentIndex(index)
-        self.opened_widget.append(self.currentWidget())
+        if not self.opened_widget[-1] is self.currentWidget():
+            self.opened_widget.append(self.currentWidget())
         print(self.opened_widget)
 
     def setCurrentWidget(self, index):
         super().setCurrentWidget(index)
-        self.opened_widget.append(self.currentWidget())
+        if not self.opened_widget[-1] is self.currentWidget():
+            self.opened_widget.append(self.currentWidget())
         print(self.opened_widget)
 
     def _on_summon_widget(self, typ, pos, hash_id):
@@ -1089,7 +1100,8 @@ class AttributePanal(StackWidget):
         form.go_back.connect(self.go_back)
         form.go_home.connect(self.go_home)
         form.request_script_editor.connect(self.request_script_editor.emit)
-        self.addWidget(form, hash_id, switch=True)
+        self.addWidget(form, hash_id, switch=False)
+        self.setCurrentWidget(self.find(hash_id))
 
         # 發送 hash_id, attribute, layer_type 給 WatchPreview
         self.send_data.emit(hash_id, form.get_attribute(), layer_type)
