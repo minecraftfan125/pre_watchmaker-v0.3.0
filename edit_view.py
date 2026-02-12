@@ -517,7 +517,7 @@ class AttributeForm(QScrollArea):
         tip_signal = pyqtSignal(str)
         value_changed = pyqtSignal(object)
         open_script_editor = pyqtSignal(object)
-        open_widget_editor = pyqtSignal(object, object)
+        open_widget_editor = pyqtSignal()
 
         def __init__(self, attr_config, signal, parent=None):
             super().__init__(parent)
@@ -676,7 +676,7 @@ class AttributeForm(QScrollArea):
             self.right.clicked.connect(self._on_widget_clicked)
 
         def _on_widget_clicked(self):
-            self.open_widget_editor.emit(self, self.default)
+            self.open_widget_editor.emit()
 
         def _create_bool_ui(self):
             self.right = QRadioButton()
@@ -809,7 +809,7 @@ class AttributeForm(QScrollArea):
 
     # AttributeForm 類別信號
     request_script_editor = pyqtSignal(object)
-    open_widget_editor = pyqtSignal(object, object)
+    open_widget_editor = pyqtSignal(object)
     value_changed = pyqtSignal(str, object)
     go_back=pyqtSignal()
     go_home=pyqtSignal()
@@ -819,6 +819,7 @@ class AttributeForm(QScrollArea):
         self._setup_scroll_area()
         self._containers = {}
         self._layer_type = None
+        print(attribute_list)
         if attribute_list[0]["TYPE"]!="baseLayer":
             self.back_container()
         self._parse_and_build(attribute_list)
@@ -952,8 +953,11 @@ class AttributeForm(QScrollArea):
         container.value_changed.connect(
             lambda val, name=config["name"]: self.value_changed.emit(name, val)
         )
+        if config["type"]=="widget":
+            widget_id=self.parent().get_hash_id()
+            self.parent().create_widget(list(config.values())[2],widget_id)
+            container.open_widget_editor.connect(lambda:self.open_widget_editor.emit(widget_id))
         container.open_script_editor.connect(self.request_script_editor.emit)
-        container.open_widget_editor.connect(self.open_widget_editor.emit)
         self._containers[config["name"]] = container
         self._vlayout.addWidget(container)
 
@@ -984,9 +988,7 @@ class AttributePanal(StackWidget):
     delect_widget = pyqtSignal(object, object)
     send_data = pyqtSignal(object, object, object)
     request_script_editor = pyqtSignal(object)  # 轉發 container 的腳本編輯器請求
-    open_widget_editor = pyqtSignal(
-        object, object
-    )  # 開啟 widget 子列表信號 (container, widget_data)
+    open_widget_editor = pyqtSignal()
 
     def __init__(self, data=None, signal=None, tip_signal=None, parent=None):
         super().__init__(parent)
@@ -999,10 +1001,9 @@ class AttributePanal(StackWidget):
         self.tip_signal = tip_signal
         self._attribute_cache = {}  # {hash_id: 已生成的屬性列表}
         self._widget_views = {}  # {container_id: widget_view} 儲存每個 container 的 widget 視窗
-        home=AttributeForm(getattr(components,"watchSetting"))
+        home=AttributeForm(getattr(components,"watchSetting"),self)
         self.opened_widget=[home]
         self.addWidget(home,1)
-        self.id_stack = [2]
 
     def go_back(self):
         self.opened_widget.pop()
@@ -1027,16 +1028,14 @@ class AttributePanal(StackWidget):
         print(f"can't toggle to widget {widget}")
 
     def create_widget(self, att, name=None):
-        if self.find(name):
-            self.setCurrentWidget(self.find(name))
-            return
         if name is None:
             name=self.get_hash_id()
-        form = AttributeForm(att)
+        form = AttributeForm(att,self)
         # 連接 AttributeForm 的信號到 AttributePanal
         form.request_script_editor.connect(self.request_script_editor.emit)
         form.go_back.connect(self.go_back)
         form.go_home.connect(self.go_home)
+        form.open_widget_editor.connect(lambda id:self.setCurrentWidget(self.find(id)))
         self.addWidget(form, name,False)
         self.setCurrentWidget(self.find(name))
         
@@ -1044,13 +1043,11 @@ class AttributePanal(StackWidget):
         super().setCurrentIndex(index)
         if not self.opened_widget[-1] is self.currentWidget():
             self.opened_widget.append(self.currentWidget())
-        print(self.opened_widget)
 
     def setCurrentWidget(self, index):
         super().setCurrentWidget(index)
         if not self.opened_widget[-1] is self.currentWidget():
             self.opened_widget.append(self.currentWidget())
-        print(self.opened_widget)
 
     def _on_summon_widget(self, typ, pos, hash_id):
         """處理 summon_widget 信號"""
@@ -1067,7 +1064,7 @@ class AttributePanal(StackWidget):
             if component_def is None:
                 print(f"Warning: Component '{typ}' not found")
                 return
-            template = AttributeForm(component_def)
+            template = AttributeForm(component_def,self)
             template.request_script_editor.connect(self.request_script_editor.emit)
             template.go_back.connect(self.go_back)
             template.go_home.connect(self.go_home)
@@ -1096,7 +1093,7 @@ class AttributePanal(StackWidget):
                 att.append({name: value})
 
         # 創建新實例
-        form = AttributeForm(att)
+        form = AttributeForm(att,self)
         form.go_back.connect(self.go_back)
         form.go_home.connect(self.go_home)
         form.request_script_editor.connect(self.request_script_editor.emit)
@@ -1149,7 +1146,7 @@ class EditView(QWidget):
         self.setMouseTracking(True)
         self.setAcceptDrops(True)
         self.is_dragging = False
-        self.id_stack = [1]
+        self.id_stack = [2]
         self.set_ui()
         self.setStyleSheet(load_style())
 
@@ -1173,6 +1170,11 @@ class EditView(QWidget):
         main_layout.addWidget(self.explorer)
         main_layout.addWidget(self.watch_preview)
         main_layout.addWidget(component_related)
+
+        self.explorer.get_hash_id=lambda:self.get_hash_id()
+        self.watch_preview.get_hash_id=lambda:self.get_hash_id()
+        self.attribute.get_hash_id=lambda:self.get_hash_id()
+        self.components.get_hash_id=lambda:self.get_hash_id()
 
         # 安裝事件過濾器到所有可拖放區域
         self.explorer.installEventFilter(self)
@@ -1312,3 +1314,8 @@ class EditView(QWidget):
     def dropEvent(self, event):
         """處理放下事件"""
         self.item_drop()
+
+
+#TODO:
+#檔案總管排序
+#檔案總管圖層管理
