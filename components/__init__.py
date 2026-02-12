@@ -51,6 +51,7 @@ _lazy_imports = {
     'light_dir': 'attributes',
     'complication': 'attributes',
     # attributes.py - component types (camelCase)
+    'watchSetting': 'attributes',
     'watchBackground': 'attributes',
     'photoCube': 'attributes',
     'textCurved': 'attributes',

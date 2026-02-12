@@ -811,12 +811,16 @@ class AttributeForm(QScrollArea):
     request_script_editor = pyqtSignal(object)
     open_widget_editor = pyqtSignal(object, object)
     value_changed = pyqtSignal(str, object)
+    go_back=pyqtSignal()
+    go_home=pyqtSignal()
 
     def __init__(self, attribute_list, parent=None):
         super().__init__(parent)
         self._setup_scroll_area()
         self._containers = {}
         self._layer_type = None
+        if attribute_list[0]["TYPE"]!="baseLayer":
+            self.back_container()
         self._parse_and_build(attribute_list)
 
     def _setup_scroll_area(self):
@@ -829,6 +833,17 @@ class AttributeForm(QScrollArea):
         self._vlayout.setAlignment(Qt.AlignTop)
         self._vlayout.setContentsMargins(10, 20, 10, 20)
         self._vlayout.setSpacing(4)
+
+    def back_container(self):
+        hlayout=QHBoxLayout()
+        back=QPushButton("< Back")
+        home=QPushButton("Home")
+        hlayout.addWidget(back)
+        hlayout.addStretch()
+        hlayout.addWidget(home)
+        back.clicked.connect(self.go_back.emit)
+        home.clicked.connect(self.go_home.emit)
+        self._vlayout.addLayout(hlayout)
 
     def _parse_and_build(self, attribute_list):
         import copy
@@ -957,7 +972,6 @@ class AttributeForm(QScrollArea):
         for container in self._containers.values():
             container.tip_signal.connect(tip_bar.set_tip)
 
-
 class AttributePanal(StackWidget):
     summon_widget = pyqtSignal(object, object, object)  # (typ, pos, hash_id)
     delect_widget = pyqtSignal(object, object)
@@ -974,141 +988,58 @@ class AttributePanal(StackWidget):
         )
         self.setAcceptDrops(True)
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+        self.opened_widget=[]
         self.summon_widget.connect(self._on_summon_widget)
         self.tip_signal = tip_signal
         self._attribute_cache = {}  # {hash_id: 已生成的屬性列表}
         self._widget_views = {}  # {container_id: widget_view} 儲存每個 container 的 widget 視窗
-        self.addWidget(QWidget())
-        self.id_stack = [1]
+        home=AttributeForm(getattr(components,"watchSetting"))
+        self.addWidget(home,1)
+        self.id_stack = [2]
 
-    def create_widget(self, name, att):
+    def go_back(self):
+        self.opened_widget.pop()
+        if self.opened_widget==[]:
+            self.toggle_widget(1)
+            return
+        self.toggle_widget(self.opened_widget.pop())
+
+    def go_home(self):
+        self.toggle_widget(1)
+        self.opened_widget=[]
+
+    def toggle_widget(self,widget):
+        if isinstance(widget,QWidget):
+            super().setCurrentWidget(widget)
+            return
+        result=self.find(widget)
+        if result:
+            super().setCurrentWidget(result)
+            return
+        print(f"can't toggle to widget {widget}")
+
+    def create_widget(self, att, name=None):
         if self.find(name):
             self.setCurrentWidget(self.find(name))
             return
+        if name is None:
+            name=self.get_hash_id()
         form = AttributeForm(att)
         # 連接 AttributeForm 的信號到 AttributePanal
         form.request_script_editor.connect(self.request_script_editor.emit)
-        form.open_widget_editor.connect(self._handle_widget_editor)
+        form.go_back.connect(self.go_back)
+        form.go_home.connect(self.go_home)
         self.addWidget(form, name)
+        
+    def setCurrentIndex(self, index):
+        super().setCurrentIndex(index)
+        self.opened_widget.append(self.currentWidget())
+        print(self.opened_widget)
 
-    def _handle_widget_editor(self, container, widget_data):
-        """處理 widget 編輯器的開啟請求"""
-        container_id = id(container)
-
-        # 如果已經有該 container 的視窗，直接跳轉
-        if container_id in self._widget_views:
-            widget_view = self._widget_views[container_id]
-            self.animationWidget(widget_view)
-            return
-
-        # 創建新的 widget 視窗
-        widget_view = self._create_widget_view(container, widget_data)
-        self._widget_views[container_id] = widget_view
-        self.addWidget(widget_view, container_id, switch=False)
-        self.animationWidget(widget_view)
-
-    def _create_widget_view(self, container, widget_data):
-        """為 container 創建 widget 編輯視窗（使用 AttributeForm 生成規則）"""
-        view = QWidget()
-        layout = QVBoxLayout(view)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-
-        # 頂部返回按鈕區域
-        header = QWidget()
-        header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(10, 8, 10, 8)
-
-        back_btn = QPushButton("← back")
-        back_btn.setObjectName("backButton")
-        back_btn.clicked.connect(lambda: self._back_to_parent(container))
-        header_layout.addWidget(back_btn)
-
-        title = QLabel(container.name)
-        title.setObjectName("widgetTitle")
-        title.setStyleSheet("font-size: 14px; font-weight: bold;")
-        header_layout.addWidget(title)
-        header_layout.addStretch()
-
-        layout.addWidget(header)
-
-        # 將 widget_data 轉換為 AttributeForm 所需的格式
-        attribute_list = self._convert_widget_data_to_attr_list(widget_data)
-
-        # 創建 AttributeForm
-        form = AttributeForm(attribute_list)
-        form.request_script_editor.connect(self.request_script_editor.emit)
-        form.open_widget_editor.connect(self._handle_widget_editor)
-        layout.addWidget(form, 1)
-
-        return view
-
-    def _convert_widget_data_to_attr_list(self, widget_data):
-        """將 widget_data 轉換為 AttributeForm 所需的 attribute_list 格式"""
-        if not isinstance(widget_data, dict):
-            return []
-
-        attribute_list = []
-
-        # 如果有 TYPE，加入 TYPE
-        if "TYPE" in widget_data:
-            attribute_list.append({"TYPE": widget_data["TYPE"]})
-
-        # 轉換其他屬性
-        for key, value in widget_data.items():
-            if key in ("TYPE", "Display"):
-                continue
-            attribute_list.append({key: value})
-
-        return attribute_list
-
-    def _back_to_parent(self, container):
-        """返回到 container 所在的父視窗"""
-        # 找到包含此 container 的 AttributeForm
-        for widget in self.correspond.values():
-            if isinstance(widget, AttributeForm):
-                if container.name in widget._containers:
-                    self.animationWidget(widget, reverse=True)
-                    return
-
-    def animationWidget(self, target_widget, reverse=False):
-        """帶動畫切換到目標視窗"""
-        current = self.currentWidget()
-        if current == target_widget:
-            return
-
-        # 取得目標 widget 的索引
-        target_index = self.indexOf(target_widget)
-        if target_index == -1:
-            return
-
-        # 設置動畫
-        self.setCurrentWidget(target_widget)
-
-        # 創建滑動動畫效果
-        direction = 1 if not reverse else -1
-        target_widget.setGeometry(
-            self.width() * direction, 0,
-            self.width(), self.height()
-        )
-
-        self._anim = QPropertyAnimation(target_widget, b"geometry")
-        self._anim.setDuration(200)
-        self._anim.setStartValue(QRect(
-            self.width() * direction, 0,
-            self.width(), self.height()
-        ))
-        self._anim.setEndValue(QRect(0, 0, self.width(), self.height()))
-        self._anim.setEasingCurve(QEasingCurve.OutCubic)
-        self._anim.start()
-
-    def get_hash_id(self):
-        if self.id_stack[-1] is self.id_stack[0]:
-            out = self.id_stack.pop()
-            self.id_stack.append(out + 1)
-            return out
-        else:
-            return self.id_stack.pop()
+    def setCurrentWidget(self, index):
+        super().setCurrentWidget(index)
+        self.opened_widget.append(self.currentWidget())
+        print(self.opened_widget)
 
     def _on_summon_widget(self, typ, pos, hash_id):
         """處理 summon_widget 信號"""
@@ -1127,7 +1058,8 @@ class AttributePanal(StackWidget):
                 return
             template = AttributeForm(component_def)
             template.request_script_editor.connect(self.request_script_editor.emit)
-            template.open_widget_editor.connect(self._handle_widget_editor)
+            template.go_back.connect(self.go_back)
+            template.go_home.connect(self.go_home)
             self.addWidget(template, typ, switch=False)
 
         # 從模板獲取資料
@@ -1154,8 +1086,9 @@ class AttributePanal(StackWidget):
 
         # 創建新實例
         form = AttributeForm(att)
+        form.go_back.connect(self.go_back)
+        form.go_home.connect(self.go_home)
         form.request_script_editor.connect(self.request_script_editor.emit)
-        form.open_widget_editor.connect(self._handle_widget_editor)
         self.addWidget(form, hash_id, switch=True)
 
         # 發送 hash_id, attribute, layer_type 給 WatchPreview
@@ -1184,12 +1117,12 @@ class AttributePanal(StackWidget):
 
     def dropEvent(self, event):
         text = event.mimeData().text()
-        self.create_widget(text, getattr(components, text))
+        print(text)
+        self.create_widget(getattr(components, text), text)
         event.ignore()
 
     def required_visual_effects(self, event):
         return self.rect().center(), self.size()
-
 
 class EditView(QWidget):
     exp_singal = pyqtSignal(object, object, object)

@@ -3,6 +3,20 @@
 # Based on all_att.txt
 # ============================================================================
 
+baseLayer={
+    "Watch name":"str",
+    "Discription":"str",
+    "Background":"color",
+    "Tags":"str",
+    "Shape":["Circle","Square","Apple"],
+    "Author":"str",
+    "Web link":"str",
+    "Transition to bright":["None"],
+    "Transition to dim":["None"],
+    "Script":"str",
+    "Indicators":"str"
+}
+
 # Animation Widget (動畫控制器)
 animationWidget = {"Display": "str",
     "Animation in": ["None"],
@@ -469,7 +483,9 @@ markersHMLayer = {"X": (-1280, 1280, 0),
     "Display": ["Always"]}
 
 # Export all Layer definitions
-__all__ = ["animationWidget",
+__all__ = [
+    "baseLayer",
+    "animationWidget",
     "textLayer",
     "directionalLightLayer",
     "layer3D",

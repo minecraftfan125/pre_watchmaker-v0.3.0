@@ -3,6 +3,21 @@
 # Based on all_att.txt
 # ============================================================================
 
+watchSetting=[
+    {"TYPE":"baseLayer"},
+    {"Watch name":"Untitled watch", "description": "Watch face name"},
+    {"Discription":"", "description": "Watch face description"},
+    {"Background":"000000", "description": "Background color (hex)"},
+    {"Tags":"", "description": "Tags for categorization"},
+    {"Shape":"Square", "description": "Watch shape (Square/Round)"},
+    {"Author":"", "description": "Author name"},
+    {"Web link":"", "description": "Author website URL"},
+    {"Transition to bright":"None", "description": "Transition animation to bright mode"},
+    {"Transition to dim":"None", "description": "Transition animation to dim mode"},
+    {"Script":"", "description": "Custom Lua script"},
+    {"Indicators":"widget", "description": "Indicator display type"}
+]
+
 watchBackground = [{"TYPE": "imageLayer"},
     {"Name": "Layer+id",  "description": "Layer name"},
     {"X": 0,  "description": "X coordinate"},
@@ -929,6 +944,7 @@ ring = [
 
 # Export all object definitions
 __all__ = [
+    "watchSetting",
     "watchBackground",
     'text',
     'light',
