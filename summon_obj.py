@@ -67,21 +67,31 @@ import numpy as np
 class Signal(QObject):
     thisF = pyqtSignal(float)
     thisS = pyqtSignal(str)
+    thisB = pyqtSignal(bool)
 
     def __init__(self, parent=None):
+        self._emit=None
         super().__init__(parent)
 
     def connect(self, method):
+        if method is self.connect or method is self.emit:
+            raise RecursionError("connect method cannot be method of Signal.")
         self.thisF.connect(method)
         self.thisS.connect(method)
+        self.thisB.connect(method)
+        if self._emit is not None:
+            self.emit(self._emit)
 
     def disconnect(self, method):
         self.thisF.disconnect(method)
         self.thisS.disconnect(method)
 
     def emit(self, value):
+        self._emit=value
         if isinstance(value, float) or isinstance(value, int):
             self.thisF.emit(float(value))
+        elif isinstance(value, bool):
+            self.thisF.emit(value)
         else:
             try:
                 self.thisS.emit(value)

@@ -22,6 +22,7 @@ from PyQt5.QtWidgets import (
     QColorDialog,
     QFileDialog,
     QGraphicsItem,
+    QSlider,
     QGraphicsEllipseItem,
 )
 from PyQt5.QtCore import (
@@ -271,7 +272,7 @@ class DragVisual(QLabel):
 
 
 class Exploror(QTreeWidget):
-    def __init__(self, data=None, signal=None, parent=None):
+    def __init__(self, data=None, id_stack=None, signal=None, parent=None):
         super().__init__(parent)
         self.setMaximumWidth(200)
         self.override = OverrideWidget(
@@ -315,7 +316,7 @@ class WatchPreview(QGraphicsView):
     # 場景固定大小 (錶面尺寸)
     SCENE_SIZE = 454
 
-    def __init__(self, data=None, parent=None):
+    def __init__(self, data=None, id_stack=None, parent=None):
         super().__init__(parent)
         self.scale = []
         self.hash_table = {}
@@ -519,36 +520,22 @@ class AttributeForm(QScrollArea):
         open_script_editor = pyqtSignal(object)
         open_widget_editor = pyqtSignal()
 
-        def __init__(self, attr_config, signal, parent=None):
+        def __init__(self, title,value,description,typ,signal, parent=None):
             super().__init__(parent)
-            self.attr_config = attr_config
-            self.name = attr_config.get("name", "")
-            self.attr_type = attr_config.get("type", "str")
-            self.default = attr_config.get("default", "")
-            self.description = attr_config.get("description", "")
-            self.options = attr_config.get("options", [])
+            self.name = title
+            self.attr_type = typ
+            self.default = value
+            self.description = description
+            self.options = typ
             self.signal = signal
             self._value = self.default
-            self.signal.connect(self.set_value)
             self._create_ui()
 
         def _create_ui(self):
             self.left = QLabel(self.name)
             self.left.setObjectName("attrLabel")
 
-            if self.attr_type == "str":
-                self._create_str_ui()
-            elif self.attr_type == "text":
-                self._create_str_ui()
-            elif self.attr_type == "int":
-                self._create_int_ui()
-            elif self.attr_type == "num":
-                self._create_num_ui()
-            elif self.attr_type == "number":
-                self._create_num_ui()
-            elif self.attr_type == "option":
-                self._create_option_ui()
-            elif self.attr_type == "color":
+            if self.attr_type == "color":
                 self._create_color_ui()
             elif self.attr_type == "widget":
                 self._create_widget_ui()
@@ -556,9 +543,15 @@ class AttributeForm(QScrollArea):
                 self._create_bool_ui()
             elif self.attr_type == "file":
                 self._create_file_ui()
+            elif self.attr_type == "font" or isinstance(self.attr_type,list):
+                self._create_option_ui()
+            elif isinstance(self.attr_type,tuple) and self.attr_type[2]==1:
+                self._create_int_ui()
+            elif isinstance(self.attr_type,tuple) and self.attr_type[2]==0:
+                self._create_num_ui()
             else:
                 self._create_str_ui()
-
+            
             self.right.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             if len(self.name) <= 8:
                 self.left.setFixedWidth(80)
@@ -573,43 +566,45 @@ class AttributeForm(QScrollArea):
             self.row_layout.setSpacing(8)
             self.row_layout.addWidget(self.left)
             self.row_layout.addWidget(self.right, 1)
+            self.signal.connect(self.set_value)
 
         def _create_str_ui(self):
-            if self.attr_config["name"] == "Text":
-                self.right = QWidget()
-                right_layout = QHBoxLayout(self.right)
-                right_layout.setContentsMargins(0, 0, 0, 0)
-                right_layout.setSpacing(4)
-
-                self.input = QLineEdit()
-                self.input.setObjectName("attrInput")
-                self.input.setText(str(self.default))
-                self.input.textChanged.connect(self._on_text_changed)
-                self.input.textChanged.connect(self.signal.emit)
-                self.input.setAcceptDrops(False)
-                right_layout.addWidget(self.input, 1)
-
-                self.script_btn = QPushButton("_<")
-                self.script_btn.setObjectName("scriptButton")
-                self.script_btn.setFixedSize(30, 25)
-                self.script_btn.clicked.connect(
-                    lambda: self.open_script_editor.emit(self)
-                )
-                right_layout.addWidget(self.script_btn)
+            if self.name in ["Text","Script"]:
+                self._create_num_ui()
                 return
             self.right = QLineEdit()
             self.right.setObjectName("attrInput")
-            self.right.setText(str(self.default))
             self.right.textChanged.connect(self._on_text_changed)
             self.right.textChanged.connect(self.signal.emit)
+            self.right.setText(str(self.default))
             self.right.setAcceptDrops(False)
 
         def _create_int_ui(self):
+            if self.attr_type[1]-self.attr_type[0]<=100:
+                self.right = QWidget()
+                right_layout = QHBoxLayout(self.right)
+                slide = QSlider()
+                slide.setRange(self.attr_type[0],self.attr_type[1])
+                right_layout.addWidget(slide,4)
+                self.input=QLineEdit()
+                right_layout.addWidget(slide,1)
+                slide.valueChanged.connect(lambda text:self.input.setText(str(text)))
+                def textEdit(text):
+                    try:
+                        slide.setValue(int(text))
+                    except:
+                        pass
+                self.input.textEdited.connect(textEdit)
+                self.input.textChanged.connect(self._on_text_changed)
+                self.input.textChanged.connect(self.signal.emit)
+                slide.setValue(int(self.default))
+                self.input.setAcceptDrops(False)
+                return
             self.right = QLineEdit()
             self.right.setObjectName("attrInput")
-            self.right.setText(str(self.default))
             self.right.textChanged.connect(self._on_text_changed)
             self.right.textChanged.connect(self.signal.emit)
+            self.right.setText(str(self.default))
             self.right.setAcceptDrops(False)
 
         def _create_num_ui(self):
@@ -620,9 +615,9 @@ class AttributeForm(QScrollArea):
 
             self.input = QLineEdit()
             self.input.setObjectName("attrInput")
-            self.input.setText(str(self.default))
             self.input.textChanged.connect(self._on_text_changed)
             self.input.textChanged.connect(self.signal.emit)
+            self.input.setText(str(self.default))
             self.input.setAcceptDrops(False)
             right_layout.addWidget(self.input, 1)
 
@@ -633,14 +628,20 @@ class AttributeForm(QScrollArea):
             right_layout.addWidget(self.script_btn)
 
         def _create_option_ui(self):
+            if self.attr_type == "font":
+                font_manager = FontManager()
+                self.options = font_manager.get_available_fonts()
+                if not self.options:
+                    self.options = ["Arial"]
             self.right = QComboBox()
             self.right.setObjectName("attrCombo")
             self.right.addItems([str(opt) for opt in self.options])
             index = self.right.findText(str(self.default))
-            if index >= 0:
-                self.right.setCurrentIndex(index)
             self.right.currentTextChanged.connect(self._on_combo_changed)
             self.right.currentTextChanged.connect(self.signal.emit)
+            if index >= 0:
+                self.right.setCurrentIndex(index)
+                self.signal.emit(str(self.default))
             self.right.wheelEvent = lambda e: e.ignore()
 
         def _create_color_ui(self):
@@ -661,33 +662,28 @@ class AttributeForm(QScrollArea):
 
             self.input = QLineEdit()
             self.input.setObjectName("attrInput")
-            self.input.setText(str(self.default))
             self.input.textChanged.connect(self._on_color_text_changed)
             self.input.textChanged.connect(self.signal.emit)
+            self.input.setText(str(self.default))
             self.input.setAcceptDrops(False)
             right_layout.addWidget(self.input, 1)
 
         def _create_widget_ui(self):
             self.right = QPushButton()
             self.right.setObjectName("expandButton")
-            self.right.setText(self.default.get("Display", "")) if isinstance(
-                self.default, dict
-            ) else str(self.default)
-            self.right.clicked.connect(self._on_widget_clicked)
-
-        def _on_widget_clicked(self):
-            self.open_widget_editor.emit()
+            self.right.clicked.connect(self.open_widget_editor.emit)
+            self.signal.connect(self.right.setText)
 
         def _create_bool_ui(self):
             self.right = QRadioButton()
             self.right.setObjectName("attrCombo")
-            self.right.setChecked(self.default)
             self.right.clicked.connect(self._on_bool_changed)
             self.right.clicked.connect(self.signal.emit)
+            self.right.setChecked(self.default)
 
         def _on_bool_changed(self, text):
             self._value = text == "True"
-            self.attr_config["default"] = self._value
+            self.default = self._value
             self.value_changed.emit(self._value)
 
         def _create_file_ui(self):
@@ -715,7 +711,7 @@ class AttributeForm(QScrollArea):
             )
             if file_path:
                 self._value = file_path
-                self.attr_config["default"] = file_path
+                self.default = file_path
                 self._update_file_button_text()
                 self.value_changed.emit(file_path)
                 self.signal.emit(file_path)
@@ -727,16 +723,16 @@ class AttributeForm(QScrollArea):
 
         def _on_text_changed(self, text):
             self._value = text
-            self.attr_config["default"] = text
+            self.default = text
             self.value_changed.emit(text)
 
         def _on_combo_changed(self, text):
             self._value = text
-            self.attr_config["default"] = text
+            self.default = text
             self.value_changed.emit(text)
 
         def _on_color_clicked(self):
-            color = QColorDialog.getColor(self._current_color, self, "選擇顏色")
+            color = QColorDialog.getColor(self._current_color, self, "choose color")
             if color.isValid():
                 self._current_color = color
                 self._update_color_button()
@@ -747,7 +743,7 @@ class AttributeForm(QScrollArea):
 
         def _on_color_text_changed(self, text):
             self._value = text
-            self.attr_config["default"] = text
+            self.default = text
             try:
                 color = QColor(f"#{text}" if not text.startswith("#") else text)
                 if color.isValid():
@@ -773,7 +769,8 @@ class AttributeForm(QScrollArea):
             if self._value == self.valid(value):
                 return
             self._value = value
-            if self.attr_type == "option":
+            print(value,self.attr_type,self.name)
+            if isinstance(self.attr_type,list) or self.attr_type=="font":
                 index = self.right.findText(str(value))
                 if index >= 0:
                     self.right.setCurrentIndex(index)
@@ -784,16 +781,11 @@ class AttributeForm(QScrollArea):
                     self._update_color_button()
                 except:
                     pass
-            elif self.attr_type in ("num", "number"):
+            elif isinstance(self.attr_type,tuple):
                 self.input.setText(str(value))
             elif self.attr_type == "bool":
                 index = 0 if value else 1
-                self.right.setCurrentIndex(index)
-            elif self.attr_type == "widget":
-                display_text = (
-                    value.get("Display", "") if isinstance(value, dict) else str(value)
-                )
-                self.display_field.setText(display_text)
+                self.right.setChecked(index)
             elif self.attr_type == "file":
                 self._update_file_button_text()
             else:
@@ -809,7 +801,7 @@ class AttributeForm(QScrollArea):
 
     # AttributeForm 類別信號
     request_script_editor = pyqtSignal(object)
-    open_widget_editor = pyqtSignal(object)
+    open_widget_editor = pyqtSignal()
     value_changed = pyqtSignal(str, object)
     go_back=pyqtSignal()
     go_home=pyqtSignal()
@@ -818,11 +810,9 @@ class AttributeForm(QScrollArea):
         super().__init__(parent)
         self._setup_scroll_area()
         self._containers = {}
-        self._layer_type = None
-        print(attribute_list)
+        self._layer_type = attribute_list[0]["TYPE"]
         if attribute_list[0]["TYPE"]!="baseLayer":
-            self.back_container()
-        self._parse_and_build(attribute_list)
+            self.back_container(attribute_list[0]["TYPE"])
 
     def _setup_scroll_area(self):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -835,19 +825,22 @@ class AttributeForm(QScrollArea):
         self._vlayout.setContentsMargins(10, 20, 10, 20)
         self._vlayout.setSpacing(4)
 
-    def back_container(self):
+    def back_container(self,typ):
         import components.common as common_defs
         hlayout=QHBoxLayout()
         back=QPushButton("< Back")
         home=QPushButton("Home")
-        layer_combo=QComboBox()
-        layer_combo.setObjectName("attrCombo")
-        layer_names=[name for name in common_defs.__all__ if name!="baseLayer" and name!="animationWidget"]
-        layer_combo.addItems(layer_names)
-        if self._layer_type and self._layer_type in layer_names:
-            layer_combo.setCurrentText(self._layer_type)
         hlayout.addWidget(back)
-        hlayout.addWidget(layer_combo)
+        if typ!="animationWidget":
+            layer_combo=QComboBox()
+            layer_combo.setObjectName("attrCombo")
+            layer_names=[name for name in common_defs.__all__ if name!="baseLayer" and name!="animationWidget"]
+            layer_combo.addItems(layer_names)
+            if self._layer_type and self._layer_type in layer_names:
+                layer_combo.setCurrentText(self._layer_type)
+            hlayout.addWidget(layer_combo)
+        else:
+            hlayout.addStretch()
         hlayout.addWidget(home)
         back.clicked.connect(self.go_back.emit)
         home.clicked.connect(self.go_home.emit)
@@ -858,12 +851,6 @@ class AttributeForm(QScrollArea):
         import components.common as common_defs
 
         attr_list = copy.deepcopy(attribute_list)
-
-        # 取得 layer type
-        for item in attr_list:
-            if "TYPE" in item:
-                self._layer_type = item["TYPE"]
-                break
 
         layer_def = (
             getattr(common_defs, self._layer_type, {}) if self._layer_type else {}
@@ -946,19 +933,11 @@ class AttributeForm(QScrollArea):
         else:
             return {"type": "str"}
 
-    def _add_container(self, config):
-        container = self.AttributeContainer(
-            config, self.attribute.signal[config["name"]], self._main_widget
-        )
-        container.value_changed.connect(
-            lambda val, name=config["name"]: self.value_changed.emit(name, val)
-        )
-        if config["type"]=="widget":
-            widget_id=self.parent().get_hash_id()
-            self.parent().create_widget(list(config.values())[2],widget_id)
-            container.open_widget_editor.connect(lambda:self.open_widget_editor.emit(widget_id))
+    def add_container(self, title, value, description, typ, signal):
+        container = self.AttributeContainer(title,value,description,typ,signal)
         container.open_script_editor.connect(self.request_script_editor.emit)
-        self._containers[config["name"]] = container
+        container.open_widget_editor.connect(self.open_widget_editor.emit)
+        self._containers[title] = container
         self._vlayout.addWidget(container)
 
     def pack(self):
@@ -983,6 +962,9 @@ class AttributeForm(QScrollArea):
         for container in self._containers.values():
             container.tip_signal.connect(tip_bar.set_tip)
 
+    def get_signal(self,name):
+        return self._containers[name].signal
+
 class AttributePanal(StackWidget):
     summon_widget = pyqtSignal(object, object, object)  # (typ, pos, hash_id)
     delect_widget = pyqtSignal(object, object)
@@ -990,7 +972,7 @@ class AttributePanal(StackWidget):
     request_script_editor = pyqtSignal(object)  # 轉發 container 的腳本編輯器請求
     open_widget_editor = pyqtSignal()
 
-    def __init__(self, data=None, signal=None, tip_signal=None, parent=None):
+    def __init__(self, data=None, id_stack=None, signal=None, tip_signal=None, parent=None):
         super().__init__(parent)
         self.override = OverrideWidget(
             "drop here\nset preset value", "img/edit/att_drag.png", self
@@ -1001,9 +983,44 @@ class AttributePanal(StackWidget):
         self.tip_signal = tip_signal
         self._attribute_cache = {}  # {hash_id: 已生成的屬性列表}
         self._widget_views = {}  # {container_id: widget_view} 儲存每個 container 的 widget 視窗
-        home=AttributeForm(getattr(components,"watchSetting"),self)
-        self.opened_widget=[home]
-        self.addWidget(home,1)
+        self.opened_widget=[]
+        if id_stack is None:
+            self.id_stack = [2]
+        else:
+            self.id_stack =id_stack
+        self.addWidget(getattr(components,"watchSetting"),1)
+        self.opened_widget=[self.currentWidget()]
+    
+    def get_hash_id(self):
+        if self.id_stack[-1] is self.id_stack[0]:
+            out = self.id_stack.pop()
+            self.id_stack.append(out + 1)
+            return out
+        else:
+            return self.id_stack.pop()
+
+    def addWidget(self, att_list, id=None, create=False, switch=True):
+        print("tri")
+        widget=AttributeForm(att_list,self)
+        layer_def=getattr(components,att_list.pop(0)["TYPE"],{})
+        for att in att_list:
+            signal=summon_obj.Signal()
+            title,value=list(att.items())[0]
+            description=att["description"]
+            typ=layer_def.get(title,[])
+            if typ=="widget":
+                display=value.pop(1)["Display"]
+                widget_id=self.get_hash_id()
+                self.addWidget(value,widget_id,create,False)
+                signal=self.find(widget_id).get_signal(display)
+                widget.open_widget_editor.connect(lambda:self.setCurrentWidget(self.find(widget_id)))
+            widget.add_container(title,value,description,typ,signal)
+        widget.request_script_editor.connect(self.request_script_editor.emit)
+        widget.go_back.connect(self.go_back)
+        widget.go_home.connect(self.go_home)
+        if id is None:
+            id=self.get_hash_id()
+        super().addWidget(widget, id, switch)
 
     def go_back(self):
         self.opened_widget.pop()
@@ -1041,12 +1058,12 @@ class AttributePanal(StackWidget):
         
     def setCurrentIndex(self, index):
         super().setCurrentIndex(index)
-        if not self.opened_widget[-1] is self.currentWidget():
+        if len(self.opened_widget)==0 or not self.opened_widget[-1] is self.currentWidget():
             self.opened_widget.append(self.currentWidget())
 
     def setCurrentWidget(self, index):
         super().setCurrentWidget(index)
-        if not self.opened_widget[-1] is self.currentWidget():
+        if len(self.opened_widget)==0 or not self.opened_widget[-1] is self.currentWidget():
             self.opened_widget.append(self.currentWidget())
 
     def _on_summon_widget(self, typ, pos, hash_id):
@@ -1126,8 +1143,7 @@ class AttributePanal(StackWidget):
 
     def dropEvent(self, event):
         text = event.mimeData().text()
-        print(text)
-        self.create_widget(getattr(components, text), text)
+        self.addWidget(getattr(components, text), text)
         event.ignore()
 
     def required_visual_effects(self, event):
@@ -1154,12 +1170,12 @@ class EditView(QWidget):
         main_layout = QHBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
-        self.explorer = Exploror(self.data, self.exp_singal)
-        self.watch_preview = WatchPreview(self.data)
+        self.explorer = Exploror(self.data, self.id_stack, self.exp_singal)
+        self.watch_preview = WatchPreview(self.data, self.id_stack)
 
         component_related = QSplitter(Qt.Vertical)
         self.components = ComponentPanel(self.data)
-        self.attribute = AttributePanal(self.data, self.tip_signal)
+        self.attribute = AttributePanal(self.data, self.id_stack, self.tip_signal)
         self.drag_box = DragVisual(self)
         component_related.setObjectName("objectSplitter")
         component_related.setHandleWidth(2)

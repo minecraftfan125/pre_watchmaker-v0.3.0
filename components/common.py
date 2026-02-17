@@ -19,7 +19,7 @@ baseLayer={
 
 # Animation Widget (動畫控制器)
 animationWidget = {"Display": "str",
-    "Animation in": ["None"],
+    "Animation in": ["None","test"],
     "Delay start": (1, 2048, 0),
     "Duration in": (1, 2048, 0),
     "Duration on": (1, 2048, 0),

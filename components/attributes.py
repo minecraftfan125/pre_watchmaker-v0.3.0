@@ -47,7 +47,7 @@ text = [
     {"Y": 0,  "description": "Y coordinate"},
     {"Animation": [
         {"TYPE":"animationWidget"},
-        {"Display": "None", "description": "Display condition"},
+        {"Display": "Animation in", "description": "Display condition"},
         {"Animation in": "None", "description": "Entry animation"},
         {"Delay start": 0, "description": "Delay before start"},
         {"Duration in": 0.5, "description": "Entry animation duration"},
