@@ -9,7 +9,7 @@ QPushButton#menuButton {
     color: #ffffff;
     border: none;
     padding: 5px 15px;
-    font-size: 13px;
+    font-size: 17px;
     font-weight: normal;
     text-align: left;
 }
@@ -27,6 +27,7 @@ QMenu#fileMenu {
     color: #ffffff;
     border: 1px solid #3d3d3d;
     padding: 5px 0px;
+    font-size: 16px;
 }
 
 QMenu#fileMenu::item {

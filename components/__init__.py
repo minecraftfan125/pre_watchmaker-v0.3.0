@@ -5,6 +5,7 @@ Components module with lazy loading support.
 
 import importlib
 from typing import TYPE_CHECKING
+import copy
 
 # 定義可延遲載入的屬性
 _lazy_imports = {
@@ -87,7 +88,7 @@ def __getattr__(name: str):
                 f'.{module_name}', __name__
             )
 
-        return getattr(_loaded_modules[module_name], name)
+        return copy.deepcopy(getattr(_loaded_modules[module_name], name))
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 

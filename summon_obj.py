@@ -25,6 +25,7 @@ from PyQt5.QtWidgets import (
     QComboBox,
     QColorDialog,
     QGraphicsOpacityEffect,
+    QGraphicsScene
 )
 from PyQt5.QtCore import (
     Qt,
@@ -88,10 +89,10 @@ class Signal(QObject):
 
     def emit(self, value):
         self._emit=value
-        if isinstance(value, float) or isinstance(value, int):
+        if isinstance(value, bool):
+            self.thisB.emit(value)
+        elif isinstance(value, float) or isinstance(value, int):
             self.thisF.emit(float(value))
-        elif isinstance(value, bool):
-            self.thisF.emit(value)
         else:
             try:
                 self.thisS.emit(value)
@@ -377,23 +378,27 @@ class LuaText(str):
 # Base Component Class
 # ============================================================================
 class Component:
-    def init_component(self, attribute: Attribute, parent=None):
+    def init_component(self, attribute: dict, id, parent:QGraphicsScene=None):
+        if parent is not None:
+            parent.addItem(self)
+        self._parent=parent
         self.start_drag_pos = None
         self.attribute = attribute
         self.start_drag_pos = None
         self.draging = False
+        self.id=id
         self.name = ""
         self.setFlags(QGraphicsItem.ItemIsMovable | QGraphicsItem.ItemIsSelectable)
         self.controller = ComponentFrameLine(self)
         self.controller.setVisible(False)
-        self.setPos(self.attribute["X"],self.attribute["Y"])
-        self.setLayerTransform()
-        self.setOpacity(self.attribute["Opacity"])
+        self.rotate_value=0
+        self.skew_x_value=0
+        self.skew_y_value=0
         self.connect("X", self.move_x)
         self.connect("Y", self.move_y)
-        self.connect("Skew X", self.setLayerTransform)
-        self.connect("Skew Y", self.setLayerTransform)
-        self.connect("Rotation", self.setLayerTransform)
+        self.connect("Skew X", self.skew_x)
+        self.connect("Skew Y", self.skew_y)
+        self.connect("Rotation", self.rotate)
         self.connect("Opacity", self.setLayerOpacity)
         self.connect("Display", self.display)
 
@@ -411,6 +416,14 @@ class Component:
 
     def gyro(self, value):
         return
+    
+    def skew_x(self,value):
+        self.skew_x_value=value
+        self.setLayerTransform()
+
+    def skew_y(self,value):
+        self.skew_y_value=value
+        self.setLayerTransform()
 
     def shear(self, matrix, sx, sy):
         center = self.boundingRect().center()
@@ -419,18 +432,19 @@ class Component:
         matrix.translate(-center.x(), -center.y())
         return matrix
 
-    def rotate(self, matrix):
-        matrix.rotate(float(self.attribute["Rotation"]))
-        return matrix
+    def rotate(self, value):
+        self.rotate_value=value
+        self.setLayerTransform()
 
-    def setLayerTransform(self, value=None, matrix=None, combine=False):
+    def setLayerTransform(self, matrix=None, combine=False):
         if matrix is None: matrix=QTransform()
+        print(type(self.skew_x_value),self.skew_x_value,"this")
         matrix = self.shear(
             matrix,
-            np.tan(np.deg2rad(self.attribute["Skew X"])),
-            np.tan(np.deg2rad(self.attribute["Skew Y"])),
+            np.tan(np.deg2rad(self.skew_x_value)),
+            np.tan(np.deg2rad(self.skew_y_value)),
         )
-        matrix = self.rotate(matrix)
+        matrix.rotate(float(self.rotate_value))
         QGraphicsItem.setTransform(self, matrix, combine)
 
     def setLayerOpacity(self, opacity):
@@ -448,7 +462,8 @@ class Component:
             pass
 
     def connect(self, key, method):
-        self.attribute.signal[key].connect(method)
+        print(self.attribute)
+        self.attribute[key].connect(method)
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.ItemSelectedChange:
@@ -470,16 +485,11 @@ class textLayer(QGraphicsTextItem, Component):
     # shader
     # tap_action
     # text_effect
-    def __init__(self, attribute: Attribute, parent=None):
+    def __init__(self, attribute: dict, id, parent=None):
         self.x_offset=0.5
         self.y_offset=0.5
-        QGraphicsTextItem.__init__(self, parent)
-        Component.init_component(self, attribute)
-        self.setPlainText(attribute.get("Text", ""))
-        # 先設置字體大小，再設置字體樣式
-        self.setTextSize(self.attribute.get("Text size", 12))
-        self.setFontStyle(self.attribute.get("Font", "Arial"))
-        self.setColor(self.attribute.get("Color", "ffffff"))
+        QGraphicsTextItem.__init__(self)
+        Component.init_component(self, attribute, id,parent)
         self.setLayerTransform()
         self.connect("Text", self.setPlainText)
         self.connect("Font", self.setFontStyle)
@@ -499,10 +509,10 @@ class textLayer(QGraphicsTextItem, Component):
         if matrix is None: matrix=QTransform()
         matrix=self.shear(
             matrix,
-            np.tan(np.deg2rad(self.attribute["Skew X"])),
-            np.tan(np.deg2rad(self.attribute["Skew Y"])),)
+            np.tan(np.deg2rad(self.skew_x_value)),
+            np.tan(np.deg2rad(self.skew_y_value)))
         matrix2=QTransform()
-        self.rotate(matrix2)
+        matrix2.rotate(self.rotate_value)
         matrix2=self.layerAlignment(matrix2)
         matrix3=matrix*matrix2
         QGraphicsItem.setTransform(self,matrix3)
@@ -562,7 +572,7 @@ class textLayer(QGraphicsTextItem, Component):
 # Image Layer (圖片圖層)
 # ============================================================================
 class imageLayer(QGraphicsPixmapItem, Component):
-    def __init__(self, attribute: Attribute, parent=None):
+    def __init__(self, attribute: dict, parent=None):
         self.x_offset=0.5
         self.y_offset=0.5
         QGraphicsPixmapItem.__init__(self, parent)
@@ -917,7 +927,7 @@ LAYER_CLASS_MAP = {
 }
 
 
-def create_layer(layer_type: str, attribute: Attribute, parent=None):
+def create_layer(layer_type: str, signal_dict: dict,id:int, parent=None):
     """根據圖層類型創建對應的圖層實例"""
     layer_class = LAYER_CLASS_MAP.get(layer_type, textLayer)
-    return layer_class(attribute, parent)
+    return layer_class(signal_dict,id, parent)

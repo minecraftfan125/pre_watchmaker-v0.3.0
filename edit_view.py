@@ -44,7 +44,7 @@ from script_view import ScriptView
 from common import FlowLayout, StackWidget, FontManager
 import components
 import summon_obj
-
+import re
 
 def load_style():
     """載入編輯視圖樣式"""
@@ -85,11 +85,10 @@ def Dragable(cls):
         # 存储组件信息（tooltip）
         mime_data.setText(self.name)
         drag.setMimeData(mime_data)
-        self.signal.emit(self.name, self.attributes)
         # 执行拖拽
         result = drag.exec_(Qt.CopyAction)
         if result is result:
-            self.signal.emit(self.name, "drop")
+            self.signal.emit("drop")
         # 重置拖拽起始位置
         self.drag_start_position = None
         self.draged = True
@@ -130,19 +129,12 @@ class ComponentButton(QPushButton):
             self.setIcon(icon)
             self.setIconSize(scaled_pixmap.size())
 
-    def get_attribute(self):
-        return self.attributes
-
     def mouseMoveEvent(self, event):
         super().mouseMoveEvent(event)
-        if not hasattr(self, "attributes"):
-            self.attributes = getattr(components, self.name)
 
     def mousePressEvent(self, event):
         super().mousePressEvent(event)
-        if not hasattr(self, "attributes"):
-            self.attributes = getattr(components, self.name)
-        self.signal.emit(self.name, self.attributes)
+        self.signal.emit(self.name)
 
 
 def _generate_tooltip(filename):
@@ -219,7 +211,6 @@ class OverrideWidget(QWidget):
         self.raise_()
         super().show()
 
-
 class DragVisual(QLabel):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -270,11 +261,29 @@ class DragVisual(QLabel):
         else:
             self.setGeometry(target)
 
-
-class Exploror(QTreeWidget):
+class Exploror(QWidget):
     def __init__(self, data=None, id_stack=None, signal=None, parent=None):
         super().__init__(parent)
-        self.setMaximumWidth(200)
+        self.setObjectName("explorer")
+        self._vlayout=QVBoxLayout(self)
+        self._vlayout.setContentsMargins(0,5,7,0)
+        hlayout=QHBoxLayout(self)
+        sort_label=QLabel("      Sort by")
+        sort_label.setObjectName("explorerSortLabel")
+        self.sort_option=QComboBox()
+        self.sort_option.setObjectName("explorerCombo")
+        self.sort_option.addItems(["level","name","layer"])
+        hlayout.addWidget(sort_label,2)
+        hlayout.addWidget(self.sort_option,3)
+        self._vlayout.addLayout(hlayout,1)
+        self.tree=QTreeWidget()
+        self.tree.setObjectName("explorerTree")
+        self.setMaximumWidth(300)
+        self.tree.setColumnCount(3)
+        self.tree.setHeaderLabels(["Name","Layer","     "])
+        self.tree.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.tree.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._vlayout.addWidget(self.tree,19)
         self.override = OverrideWidget(
             "drop here\nadd new item", "img/edit/exp_drag.png", self
         )
@@ -307,11 +316,10 @@ class Exploror(QTreeWidget):
     def required_visual_effects(self, event):
         return event.pos(), QSize(60, 60)
 
-
 class WatchPreview(QGraphicsView):
     select = pyqtSignal(object)
     summon = pyqtSignal(object, object, object)
-    receive = pyqtSignal(object, object, object)
+    receive = pyqtSignal(object,object,object)
 
     # 場景固定大小 (錶面尺寸)
     SCENE_SIZE = 454
@@ -322,7 +330,7 @@ class WatchPreview(QGraphicsView):
         self.hash_table = {}
         self.sence = QGraphicsScene()
         # 設定固定的場景範圍
-        self.sence.setSceneRect(0, 0, self.SCENE_SIZE, self.SCENE_SIZE)
+        self.sence.setSceneRect(-self.SCENE_SIZE/2, -self.SCENE_SIZE/2, self.SCENE_SIZE, self.SCENE_SIZE)
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         self.setAcceptDrops(True)
         # 確保 viewport 也接受拖放
@@ -368,8 +376,8 @@ class WatchPreview(QGraphicsView):
 
         # 設置圓形的位置和大小
         self._background_circle.setRect(
-            center - diameter / 2,
-            center - diameter / 2,
+            -diameter/2,
+            -diameter/2,
             diameter,
             diameter
         )
@@ -388,24 +396,10 @@ class WatchPreview(QGraphicsView):
     def paintEvent(self, a0):
         super().paintEvent(a0)
 
-    def summon_component(self, hash_id, attribute, layer_type):
-        print("y")
+    def summon_component(self, layer_type, signal_dict, hash_id):
         """根據屬性和圖層類型創建元件並顯示在預覽區"""
         # 使用 summon_obj 的 create_layer 函數創建對應的圖層
-        print(attribute)
-        layer = summon_obj.create_layer(layer_type, attribute)
-
-        # 設置初始位置 (從屬性中取得 X, Y)
-        x = attribute.get("X", 0)
-        y = attribute.get("Y", 0)
-
-        # 將座標轉換為場景中心點位置
-        center = self.SCENE_SIZE / 2
-        layer.setPos(center + x, center + y)
-
-        # 將元件添加到場景
-        self.sence.addItem(layer)
-
+        layer = summon_obj.create_layer(layer_type, signal_dict,hash_id,self.sence)
         # 儲存到 hash_table
         self.hash_table[hash_id] = layer
 
@@ -415,7 +409,6 @@ class WatchPreview(QGraphicsView):
         return False
 
     def dragEnterEvent(self, event):
-        print("y")
         """拖拽進入時接受事件"""
         if event.mimeData().hasText():
             event.acceptProposedAction()
@@ -435,13 +428,11 @@ class WatchPreview(QGraphicsView):
             event.ignore()
 
     def dropEvent(self, event):
-        print("y")
         if event.mimeData().hasText():
             # 將視窗座標轉換為場景座標，並計算相對於中心的位置
             scene_pos = self.mapToScene(event.pos())
-            center = self.SCENE_SIZE / 2
-            x = int(scene_pos.x() - center)
-            y = int(scene_pos.y() - center)
+            x = int(scene_pos.x())
+            y = int(scene_pos.y())
             self.summon.emit(event.mimeData().text(), (x, y), 0)
             event.acceptProposedAction()
         self.override.hide()
@@ -452,7 +443,7 @@ class WatchPreview(QGraphicsView):
 
 class ComponentPanel(QScrollArea):
     add_component = pyqtSignal(object, object)
-    button_trigger = pyqtSignal(object, object)
+    button_trigger = pyqtSignal(object)
 
     def __init__(self, data=None, signal=None, parent=None):
         super().__init__(parent)
@@ -575,7 +566,10 @@ class AttributeForm(QScrollArea):
             self.right = QLineEdit()
             self.right.setObjectName("attrInput")
             self.right.textChanged.connect(self._on_text_changed)
-            self.right.textChanged.connect(self.signal.emit)
+            if self.name=="Name":
+                self.right.editingFinished.connect(lambda:self.value_processing(self.right.text()))
+            else:
+                self.right.textChanged.connect(self.value_processing)
             self.right.setText(str(self.default))
             self.right.setAcceptDrops(False)
 
@@ -596,14 +590,14 @@ class AttributeForm(QScrollArea):
                         pass
                 self.input.textEdited.connect(textEdit)
                 self.input.textChanged.connect(self._on_text_changed)
-                self.input.textChanged.connect(self.signal.emit)
+                self.input.textChanged.connect(self.value_processing)
                 slide.setValue(int(self.default))
                 self.input.setAcceptDrops(False)
                 return
             self.right = QLineEdit()
             self.right.setObjectName("attrInput")
             self.right.textChanged.connect(self._on_text_changed)
-            self.right.textChanged.connect(self.signal.emit)
+            self.right.textChanged.connect(self.value_processing)
             self.right.setText(str(self.default))
             self.right.setAcceptDrops(False)
 
@@ -616,7 +610,7 @@ class AttributeForm(QScrollArea):
             self.input = QLineEdit()
             self.input.setObjectName("attrInput")
             self.input.textChanged.connect(self._on_text_changed)
-            self.input.textChanged.connect(self.signal.emit)
+            self.input.textChanged.connect(self.value_processing)
             self.input.setText(str(self.default))
             self.input.setAcceptDrops(False)
             right_layout.addWidget(self.input, 1)
@@ -638,7 +632,7 @@ class AttributeForm(QScrollArea):
             self.right.addItems([str(opt) for opt in self.options])
             index = self.right.findText(str(self.default))
             self.right.currentTextChanged.connect(self._on_combo_changed)
-            self.right.currentTextChanged.connect(self.signal.emit)
+            self.right.currentTextChanged.connect(self.value_processing)
             if index >= 0:
                 self.right.setCurrentIndex(index)
                 self.signal.emit(str(self.default))
@@ -663,7 +657,7 @@ class AttributeForm(QScrollArea):
             self.input = QLineEdit()
             self.input.setObjectName("attrInput")
             self.input.textChanged.connect(self._on_color_text_changed)
-            self.input.textChanged.connect(self.signal.emit)
+            self.input.textChanged.connect(self.value_processing)
             self.input.setText(str(self.default))
             self.input.setAcceptDrops(False)
             right_layout.addWidget(self.input, 1)
@@ -678,7 +672,7 @@ class AttributeForm(QScrollArea):
             self.right = QRadioButton()
             self.right.setObjectName("attrCombo")
             self.right.clicked.connect(self._on_bool_changed)
-            self.right.clicked.connect(self.signal.emit)
+            self.right.clicked.connect(self.value_processing)
             self.right.setChecked(self.default)
 
         def _on_bool_changed(self, text):
@@ -714,7 +708,7 @@ class AttributeForm(QScrollArea):
                 self.default = file_path
                 self._update_file_button_text()
                 self.value_changed.emit(file_path)
-                self.signal.emit(file_path)
+                self.value_processing(file_path)
 
         def _update_color_button(self):
             self.color_btn.setStyleSheet(
@@ -755,6 +749,26 @@ class AttributeForm(QScrollArea):
 
         def get_value(self):
             return self._value
+        
+        def value_processing(self,value):
+            try:
+                if self.attr_type == "bool":
+                    value=bool(value)
+                elif isinstance(self.attr_type,tuple) and self.attr_type[2]==1:
+                    value=int(value)
+                elif isinstance(self.attr_type,tuple) and self.attr_type[2]==0:
+                    value=float(value)
+                    if self.name=="Rotation":
+                        value=value%360
+                    value=min(value,self.attr_type[1])
+                    value=max(value,self.attr_type[0])
+                    value=float(value)
+                else:
+                    value=str(value)
+                self.signal.emit(value)
+            except:
+                pass
+            
 
         def valid(self, text):
             try:
@@ -783,9 +797,10 @@ class AttributeForm(QScrollArea):
                     pass
             elif isinstance(self.attr_type,tuple):
                 self.input.setText(str(value))
+            elif self.attr_type == "widget":
+                self._value = None
             elif self.attr_type == "bool":
-                index = 0 if value else 1
-                self.right.setChecked(index)
+                self.right.setChecked(value)
             elif self.attr_type == "file":
                 self._update_file_button_text()
             else:
@@ -805,12 +820,15 @@ class AttributeForm(QScrollArea):
     value_changed = pyqtSignal(str, object)
     go_back=pyqtSignal()
     go_home=pyqtSignal()
+    name_disturbute={}
 
-    def __init__(self, attribute_list, parent=None):
+    def __init__(self, attribute_list, name_distrbute, parent=None):
         super().__init__(parent)
         self._setup_scroll_area()
         self._containers = {}
         self._layer_type = attribute_list[0]["TYPE"]
+        self.name_distrbute=name_distrbute
+        self.child_widget=None
         if attribute_list[0]["TYPE"]!="baseLayer":
             self.back_container(attribute_list[0]["TYPE"])
 
@@ -846,105 +864,54 @@ class AttributeForm(QScrollArea):
         home.clicked.connect(self.go_home.emit)
         self._vlayout.addLayout(hlayout)
 
-    def _parse_and_build(self, attribute_list):
-        import copy
-        import components.common as common_defs
-
-        attr_list = copy.deepcopy(attribute_list)
-
-        layer_def = (
-            getattr(common_defs, self._layer_type, {}) if self._layer_type else {}
-        )
-
-        # 建立包含所有 attribute 的字典（合併 layer_def 和 attr_list 的 key）
-        all_attrs = dict(layer_def)
-        for item in attr_list:
-            for key, val in item.items():
-                if key not in ("TYPE", "description") and key not in all_attrs:
-                    all_attrs[key] = val
-
-        self.attribute = summon_obj.Attribute(all_attrs)
-        self.attribute.set_default(dict([list(att.items())[0] for att in attr_list]))
-
-        for item in attr_list:
-            if "TYPE" in item:
-                continue
-
-            attr_name = None
-            attr_value = None
-            description = item.get("description", "")
-
-            for key, val in item.items():
-                if key != "description":
-                    attr_name = key
-                    attr_value = val
-                    break
-
-            if attr_name is None:
-                continue
-
-            type_info = self._get_type_info(layer_def, attr_name)
-            config = {
-                "name": attr_name,
-                "type": type_info["type"],
-                "default": attr_value,
-                "description": description,
-                "options": type_info.get("options", []),
-            }
-            self._add_container(config)
-
-        self._vlayout.addStretch()
-
-    def get_attribute(self):
-        return self.attribute
-
-    def _get_type_info(self, layer_def, attr_name):
-        if attr_name not in layer_def:
-            return {"type": "str", "options": []}
-
-        type_spec = layer_def[attr_name]
-
-        if type_spec == "str":
-            return {"type": "str"}
-        elif type_spec == "text":
-            return {"type": "text"}
-        elif type_spec == "color":
-            return {"type": "color"}
-        elif type_spec == "bool":
-            return {"type": "bool"}
-        elif type_spec == "file":
-            return {"type": "file"}
-        elif type_spec == "widget":
-            return {"type": "widget"}
-        elif type_spec == "font":
-            # 從 FontManager 獲取可用字型列表
-            font_manager = FontManager()
-            fonts = font_manager.get_available_fonts()
-            if not fonts:
-                fonts = ["Arial"]  # 預設字型
-            return {"type": "option", "options": fonts}
-        elif isinstance(type_spec, tuple) and len(type_spec) == 3:
-            if type_spec[2] == 1:
-                return {"type": "int"}
-            else:
-                return {"type": "num"}
-        elif isinstance(type_spec, list):
-            return {"type": "option", "options": type_spec}
-        else:
-            return {"type": "str"}
-
     def add_container(self, title, value, description, typ, signal):
         container = self.AttributeContainer(title,value,description,typ,signal)
         container.open_script_editor.connect(self.request_script_editor.emit)
         container.open_widget_editor.connect(self.open_widget_editor.emit)
         self._containers[title] = container
-        self._vlayout.addWidget(container)
+        if title!="Display":
+            self._vlayout.addWidget(container)
+        
+        if title == "Name":
+            # 【關鍵修改 1】初始化時先預設為 None，並主動呼叫一次改名驗證，確保拖入新元件時名稱就不會重複
+            container.last_valid_name = None 
+            self.rename_valid(value, container)
+            
+            # 綁定使用者修改名稱的信號
+            signal.connect(lambda text: self.rename_valid(text, container))
+
+    def rename_valid(self, new_name, container):
+        old_name = getattr(container, "last_valid_name", None)
+
+        if old_name == new_name:
+            return
+
+        if old_name and old_name in self.name_distrbute:
+            del self.name_distrbute[old_name]
+
+        final_name = new_name
+        base_name = re.sub(r' \(\d+\)$', '', new_name)
+        counter = self.name_distrbute[final_name] if final_name in self.name_distrbute else 1
+
+        while final_name in self.name_distrbute:
+            final_name = f"{base_name} ({counter})"
+            counter += 1
+
+        self.name_distrbute[final_name] = counter
+        container.last_valid_name = final_name
+
+        if final_name != new_name:
+            container.set_value(final_name)
 
     def pack(self):
-        values = {}
+        values = []
+        values.append({"TYPE":self._layer_type})
         for name, container in self._containers.items():
-            values[name] = container.get_value()
-        return (self._layer_type, values)
+            item={name:container.get_value(),"description":container.description}
+            if item[name] is None:
+                item[name]=self.child_widget.pack()
+            values.append(item)
+        return values
 
     def get_value(self, attr_name):
         if attr_name in self._containers:
@@ -958,21 +925,21 @@ class AttributeForm(QScrollArea):
     def get_all_values(self):
         return {name: c.get_value() for name, c in self._containers.items()}
 
-    def connect_tip_signal(self, tip_bar):
+    def connect_tip_signal(self,tip_signal):
         for container in self._containers.values():
-            container.tip_signal.connect(tip_bar.set_tip)
+            container.tip_signal.connect(tip_signal.emit)
 
     def get_signal(self,name):
         return self._containers[name].signal
 
 class AttributePanal(StackWidget):
-    summon_widget = pyqtSignal(object, object, object)  # (typ, pos, hash_id)
+    summon_widget = pyqtSignal(list)  # (typ, pos, hash_id)
     delect_widget = pyqtSignal(object, object)
-    send_data = pyqtSignal(object, object, object)
+    send_obj = pyqtSignal(object,object,object)
     request_script_editor = pyqtSignal(object)  # 轉發 container 的腳本編輯器請求
     open_widget_editor = pyqtSignal()
 
-    def __init__(self, data=None, id_stack=None, signal=None, tip_signal=None, parent=None):
+    def __init__(self, data=None, id_stack=None, tip_signal=None, parent=None):
         super().__init__(parent)
         self.override = OverrideWidget(
             "drop here\nset preset value", "img/edit/att_drag.png", self
@@ -984,6 +951,7 @@ class AttributePanal(StackWidget):
         self._attribute_cache = {}  # {hash_id: 已生成的屬性列表}
         self._widget_views = {}  # {container_id: widget_view} 儲存每個 container 的 widget 視窗
         self.opened_widget=[]
+        self.name={}
         if id_stack is None:
             self.id_stack = [2]
         else:
@@ -1000,27 +968,37 @@ class AttributePanal(StackWidget):
             return self.id_stack.pop()
 
     def addWidget(self, att_list, id=None, create=False, switch=True):
-        print("tri")
-        widget=AttributeForm(att_list,self)
-        layer_def=getattr(components,att_list.pop(0)["TYPE"],{})
+        widget=AttributeForm(att_list,self.name,self)
+        layer_type=att_list.pop(0)["TYPE"]
+        layer_def=getattr(components,layer_type,{})
+        signal_dict={}
+
         for att in att_list:
             signal=summon_obj.Signal()
             title,value=list(att.items())[0]
+            signal_dict[title]=signal
             description=att["description"]
             typ=layer_def.get(title,[])
             if typ=="widget":
-                display=value.pop(1)["Display"]
+                display=value[1]["Display"]
                 widget_id=self.get_hash_id()
-                self.addWidget(value,widget_id,create,False)
-                signal=self.find(widget_id).get_signal(display)
+                signal_dict.update(self.addWidget(value,widget_id,False,False))
+                widget.child_widget = self.find(widget_id)
+                signal = widget.child_widget.get_signal(display)
                 widget.open_widget_editor.connect(lambda:self.setCurrentWidget(self.find(widget_id)))
             widget.add_container(title,value,description,typ,signal)
+
+        if self.tip_signal is not None:
+            widget.connect_tip_signal(self.tip_signal)
         widget.request_script_editor.connect(self.request_script_editor.emit)
         widget.go_back.connect(self.go_back)
         widget.go_home.connect(self.go_home)
         if id is None:
             id=self.get_hash_id()
+        if create:
+            self.send_obj.emit(layer_type,signal_dict,id)
         super().addWidget(widget, id, switch)
+        return signal_dict
 
     def go_back(self):
         self.opened_widget.pop()
@@ -1044,18 +1022,6 @@ class AttributePanal(StackWidget):
             return
         print(f"can't toggle to widget {widget}")
 
-    def create_widget(self, att, name=None):
-        if name is None:
-            name=self.get_hash_id()
-        form = AttributeForm(att,self)
-        # 連接 AttributeForm 的信號到 AttributePanal
-        form.request_script_editor.connect(self.request_script_editor.emit)
-        form.go_back.connect(self.go_back)
-        form.go_home.connect(self.go_home)
-        form.open_widget_editor.connect(lambda id:self.setCurrentWidget(self.find(id)))
-        self.addWidget(form, name,False)
-        self.setCurrentWidget(self.find(name))
-        
     def setCurrentIndex(self, index):
         super().setCurrentIndex(index)
         if len(self.opened_widget)==0 or not self.opened_widget[-1] is self.currentWidget():
@@ -1066,59 +1032,23 @@ class AttributePanal(StackWidget):
         if len(self.opened_widget)==0 or not self.opened_widget[-1] is self.currentWidget():
             self.opened_widget.append(self.currentWidget())
 
-    def _on_summon_widget(self, typ, pos, hash_id):
+    def _on_summon_widget(self, args):
         """處理 summon_widget 信號"""
-        self.create_components(typ, pos, hash_id)
-
-    def create_components(self, typ, pos=None, hash_id=None):
-        """創建元件的屬性表單"""
-        # 獲取或創建模板
-        print(f"Debug: Trying to load component named '{typ}'")
-        template = self.find(typ)
-        if not template:
-            # 第一次：從 components 模組獲取定義並創建模板
-            component_def = getattr(components, typ, None)
-            if component_def is None:
-                print(f"Warning: Component '{typ}' not found")
-                return
-            template = AttributeForm(component_def,self)
-            template.request_script_editor.connect(self.request_script_editor.emit)
-            template.go_back.connect(self.go_back)
-            template.go_home.connect(self.go_home)
-            self.addWidget(template, typ, switch=False)
-
-        # 從模板獲取資料
-        layer_type = template._layer_type
-        current_values = template.get_all_values()
-
-        # 取得或生成 hash_id
-        if hash_id is None or hash_id == 0:
-            hash_id = self.get_hash_id()
-
-        # 組建屬性列表
-        att = [{"TYPE": layer_type}]
-        for name, value in current_values.items():
-            # 設定 X, Y 為滑鼠位置
-            if name == "X" and pos is not None:
-                att.append({name: pos[0]})
-            elif name == "Y" and pos is not None:
-                att.append({name: pos[1]})
-            # 設定 Name 為 Layer + hash_id
-            elif name == "Name":
-                att.append({name: f"Layer{hash_id}"})
-            else:
-                att.append({name: value})
-
-        # 創建新實例
-        form = AttributeForm(att,self)
-        form.go_back.connect(self.go_back)
-        form.go_home.connect(self.go_home)
-        form.request_script_editor.connect(self.request_script_editor.emit)
-        self.addWidget(form, hash_id, switch=False)
-        self.setCurrentWidget(self.find(hash_id))
-
-        # 發送 hash_id, attribute, layer_type 給 WatchPreview
-        self.send_data.emit(hash_id, form.get_attribute(), layer_type)
+        while len(args)<3:
+            args.append(None)
+        args=tuple(args)
+        typ, pos, hash_id=args
+        try:
+            att_list=self.find(typ).pack()
+        except AttributeError:
+            att_list=getattr(components,typ)
+        if pos is not None:
+            for att in att_list:
+                if "X" in att: att["X"]=pos[0]
+                if "Y" in att: att["Y"]=pos[1] 
+        if hash_id is None:
+            hash_id=self.get_hash_id()
+        self.addWidget(att_list,hash_id,True,True)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -1187,14 +1117,9 @@ class EditView(QWidget):
         main_layout.addWidget(self.watch_preview)
         main_layout.addWidget(component_related)
 
-        self.explorer.get_hash_id=lambda:self.get_hash_id()
-        self.watch_preview.get_hash_id=lambda:self.get_hash_id()
-        self.attribute.get_hash_id=lambda:self.get_hash_id()
-        self.components.get_hash_id=lambda:self.get_hash_id()
-
         # 安裝事件過濾器到所有可拖放區域
         self.explorer.installEventFilter(self)
-        self.explorer.viewport().installEventFilter(self)
+        self.explorer.installEventFilter(self)
         self.watch_preview.installEventFilter(self)
         self.watch_preview.viewport().installEventFilter(self)
         self.components.installEventFilter(self)
@@ -1203,7 +1128,7 @@ class EditView(QWidget):
 
         self.watch_preview.summon.connect(self.pre_call)
         self.components.button_trigger.connect(self.com_call)
-        self.attribute.send_data.connect(self.att_call)
+        self.attribute.send_obj.connect(self.att_call)
         # 連接腳本編輯器請求信號
         self.attribute.request_script_editor.connect(
             lambda container: self.summon_script_view.emit(self, container)
@@ -1212,18 +1137,19 @@ class EditView(QWidget):
     def delete_component(self, obj):
         self.id_stack.append(obj.hash_id)
 
-    def att_call(self, hash_id, attribute, layer_type):
-        self.watch_preview.receive.emit(hash_id, attribute, layer_type)
+    def att_call(self, *args):
+        self.watch_preview.receive.emit(*args)
 
-    def com_call(self, obj_type, data):
+    def com_call(self, data):
         if data == "drop":
             self.item_drop()
             return
+        self.attribute.summon_widget.connect([data])
 
     def pre_call(self, obj_type, pos, hash_id):
         if hash_id == 0:
             hash_id = self.get_hash_id()
-        self.attribute.summon_widget.emit(obj_type, pos, hash_id)
+        self.attribute.summon_widget.emit([obj_type, pos, hash_id])
 
     def get_hash_id(self):
         if self.id_stack[-1] is self.id_stack[0]:
