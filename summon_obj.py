@@ -97,7 +97,7 @@ class Signal(QObject):
             try:
                 self.thisS.emit(value)
             except:
-                print(value)
+                pass
 
 
 # =============================================================================
@@ -387,6 +387,7 @@ class Component:
         self.start_drag_pos = None
         self.draging = False
         self.id=id
+        self.z_order=0
         self.name = ""
         self.setFlags(QGraphicsItem.ItemIsMovable | QGraphicsItem.ItemIsSelectable)
         self.controller = ComponentFrameLine(self)
@@ -462,7 +463,6 @@ class Component:
             pass
 
     def connect(self, key, method):
-        print(self.attribute)
         self.attribute[key].connect(method)
 
     def itemChange(self, change, value):

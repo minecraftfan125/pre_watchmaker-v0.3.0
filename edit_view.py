@@ -56,7 +56,6 @@ def load_style():
         print(f"Warning: Style file not found: {style_path}")
         return ""
 
-
 def Dragable(cls):
     original_mousePress = cls.mousePressEvent
     original_mouseMove = cls.mouseMoveEvent
@@ -261,12 +260,73 @@ class DragVisual(QLabel):
         else:
             self.setGeometry(target)
 
+#@Dragable
+class ExplororItem(QTreeWidgetItem):
+    type_enum={'animationWidget': 0,
+                'baseLayer': 1, 
+                'chartLayer': 2, 
+                'complicationLayer': 3, 
+                'curvedTextLayer': 4, 
+                'directionalLightLayer': 5, 
+                'imageCondLayer': 6, 
+                'imageGifLayer': 7, 
+                'imageLayer': 8, 
+                'layer3D': 9, 
+                'mapLayer': 10, 
+                'markerLayer': 11, 
+                'markersHMLayer': 12, 
+                'progressLayer': 13, 
+                'ringLayer': 14, 
+                'roundedRectangleLayer': 15, 
+                'seriesLayer': 16, 
+                'shapeLayer': 17, 
+                'slideshowLayer': 18, 
+                'tachymeterLayer': 19, 
+                'textLayer': 20, 
+                'textRingLayer': 21
+                }
+    def __init__(self,layer_type,signal,parent):
+        super().__init__()
+        self.layer_type=layer_type
+        self._parent=parent
+        self.signal=signal
+        self.setText(1,re.sub(r"Layer$","",self.layer_type))
+        self.signal.connect(self.passive_rename)
+        self.level=0
+        print("y")
+
+    def passive_rename(self,name):
+        self.setText(0,name)
+        self.name=name
+
+    def update_level(self,level):
+        self.level=level
+
+    def __lt__(self,other):
+        condition=getattr(self._parent,"sort_basis","level")
+        if condition=="level":
+            return self.level < other.level
+        if condition=="name":
+            return self.name < other.name
+        if condition=="layer":
+            return self.layer_type < other.layer_type
+        return
+
+
 class Exploror(QWidget):
+    receive=pyqtSignal(str,dict,int)
+    rename=pyqtSignal(int,str)
+    rearrange=pyqtSignal(int,int)
+    inspection=pyqtSignal(int)
+    copy=pyqtSignal(int)
+    paste=pyqtSignal(int)
+    cut=pyqtSignal(int)
+    delete=pyqtSignal(int)
     def __init__(self, data=None, id_stack=None, signal=None, parent=None):
         super().__init__(parent)
         self.setObjectName("explorer")
         self._vlayout=QVBoxLayout(self)
-        self._vlayout.setContentsMargins(0,5,7,0)
+        self._vlayout.setContentsMargins(7,5,7,0)
         hlayout=QHBoxLayout(self)
         sort_label=QLabel("      Sort by")
         sort_label.setObjectName("explorerSortLabel")
@@ -289,6 +349,16 @@ class Exploror(QWidget):
         )
         self.setAcceptDrops(True)
         self.send_all = signal
+        self.receive.connect(self.add_item)
+        self.items={}
+        self.id_stack=id_stack
+
+    def add_item(self,layer_type, signal_dict, hash_id):
+        signal=signal_dict["Name"]
+        new=ExplororItem(layer_type,signal,self)
+        self.items[hash_id]=new
+        self.tree.setCurrentItem(new)
+        self.tree.addTopLevelItem(new)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -402,6 +472,7 @@ class WatchPreview(QGraphicsView):
         layer = summon_obj.create_layer(layer_type, signal_dict,hash_id,self.sence)
         # 儲存到 hash_table
         self.hash_table[hash_id] = layer
+
 
     def eventFilter(self, watched, event):
         if event.type() == QEvent.MouseButtonPress:
@@ -571,6 +642,7 @@ class AttributeForm(QScrollArea):
             else:
                 self.right.textChanged.connect(self.value_processing)
             self.right.setText(str(self.default))
+            self.signal.emit(str(self.default))
             self.right.setAcceptDrops(False)
 
         def _create_int_ui(self):
@@ -769,7 +841,6 @@ class AttributeForm(QScrollArea):
             except:
                 pass
             
-
         def valid(self, text):
             try:
                 text = str(text)
@@ -783,7 +854,6 @@ class AttributeForm(QScrollArea):
             if self._value == self.valid(value):
                 return
             self._value = value
-            print(value,self.attr_type,self.name)
             if isinstance(self.attr_type,list) or self.attr_type=="font":
                 index = self.right.findText(str(value))
                 if index >= 0:
@@ -875,12 +945,12 @@ class AttributeForm(QScrollArea):
         if title == "Name":
             # 【關鍵修改 1】初始化時先預設為 None，並主動呼叫一次改名驗證，確保拖入新元件時名稱就不會重複
             container.last_valid_name = None 
-            self.rename_valid(value, container)
+            self.rename_valid(value, container,signal)
             
             # 綁定使用者修改名稱的信號
-            signal.connect(lambda text: self.rename_valid(text, container))
+            signal.connect(lambda text: self.rename_valid(text, container,signal))
 
-    def rename_valid(self, new_name, container):
+    def rename_valid(self, new_name, container,signal):
         old_name = getattr(container, "last_valid_name", None)
 
         if old_name == new_name:
@@ -890,18 +960,20 @@ class AttributeForm(QScrollArea):
             del self.name_distrbute[old_name]
 
         final_name = new_name
-        base_name = re.sub(r' \(\d+\)$', '', new_name)
+        base_name = re.sub(r' \d$', '', new_name)
         counter = self.name_distrbute[final_name] if final_name in self.name_distrbute else 1
 
         while final_name in self.name_distrbute:
-            final_name = f"{base_name} ({counter})"
+            final_name = f"{base_name} {counter}"
             counter += 1
 
         self.name_distrbute[final_name] = counter
         container.last_valid_name = final_name
 
         if final_name != new_name:
-            container.set_value(final_name)
+            self.blockSignals(True)
+            signal.emit(final_name)
+            self.blockSignals(False)
 
     def pack(self):
         values = []
@@ -1137,8 +1209,9 @@ class EditView(QWidget):
     def delete_component(self, obj):
         self.id_stack.append(obj.hash_id)
 
-    def att_call(self, *args):
-        self.watch_preview.receive.emit(*args)
+    def att_call(self, layer_type, signal_dict, hash_id):
+        self.watch_preview.receive.emit(layer_type, signal_dict, hash_id)
+        self.explorer.receive.emit(layer_type, signal_dict, hash_id)
 
     def com_call(self, data):
         if data == "drop":

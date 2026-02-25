@@ -19,7 +19,7 @@ watchSetting=[
 ]
 
 watchBackground = [{"TYPE": "imageLayer"},
-    {"Name": "Layer+id",  "description": "Layer name"},
+    {"Name": "Layer",  "description": "Layer name"},
     {"X": 0,  "description": "X coordinate"},
     {"Y": 0,  "description": "Y coordinate"},
     {"Gyro effect": 0,  "description": "Gyroscope effect"},
@@ -41,7 +41,7 @@ watchBackground = [{"TYPE": "imageLayer"},
 # Text (文字)
 text = [
     {"TYPE": "textLayer"},
-    {"Name": "Layer+id",  "description": "Layer name"},
+    {"Name": "Layer",  "description": "Layer name"},
     {"Text": "",  "description": "Text content"},
     {"X": 0,  "description": "X coordinate"},
     {"Y": 0,  "description": "Y coordinate"},
@@ -83,7 +83,7 @@ text = [
 # Light (方向光源)
 light = [
     {"TYPE": "directionalLightLayer"},
-    {"Name": "Layer+id",  "description": "Layer name"},
+    {"Name": "Layer",  "description": "Layer name"},
     {"Enable": True,  "description": "Enable light"},
     {"Intensity": 150,  "description": "Light intensity"},
     {"Direction X": 0,  "description": "X direction"},
@@ -95,7 +95,7 @@ light = [
 # Photo Cube (3D照片立方體)
 photoCube = [
     {"TYPE": "3DLayer"},
-    {"Name": "Layer+id",  "description": "Layer name"},
+    {"Name": "Layer",  "description": "Layer name"},
     {"Photo": "",  "description": "Photo/model file"},
     {"X": 0,  "description": "X coordinate"},
     {"Y": 0,  "description": "Y coordinate"},
@@ -116,7 +116,7 @@ photoCube = [
 # Text Curved (曲線文字) - inherits from text
 textCurved = [
     {"TYPE": "curvedTextLayer"},
-    {"Name": "Layer+id",  "description": "Layer name"},
+    {"Name": "Layer",  "description": "Layer name"},
     {"Text": "",  "description": "Text content"},
     {"X": 0,  "description": "X coordinate"},
     {"Y": 0,  "description": "Y coordinate"},
@@ -145,7 +145,7 @@ textCurved = [
 # Minute Hand (分針圖片)
 minuteHand = [
     {"TYPE": "imageLayer"},
-    {"Name": "Layer+id",  "description": "Layer name"},
+    {"Name": "Layer",  "description": "Layer name"},
     {"X": 0,  "description": "X coordinate"},
     {"Y": 0,  "description": "Y coordinate"},
     {"Gyro effect": 0,  "description": "Gyroscope effect"},
@@ -167,7 +167,7 @@ minuteHand = [
 # Hour Hand (時針圖片) - inherits from minuteHand
 hourHand = [
     {"TYPE": "imageLayer"},
-    {"Name": "Layer+id",  "description": "Layer name"},
+    {"Name": "Layer",  "description": "Layer name"},
     {"X": 0,  "description": "X coordinate"},
     {"Y": 0,  "description": "Y coordinate"},
     {"Gyro effect": 0,  "description": "Gyroscope effect"},
@@ -189,7 +189,7 @@ hourHand = [
 # Second Hand (秒針圖片) - inherits from minuteHand
 secondHand = [
     {"TYPE": "imageLayer"},
-    {"Name": "Layer+id",  "description": "Layer name"},
+    {"Name": "Layer",  "description": "Layer name"},
     {"X": 0,  "description": "X coordinate"},
     {"Y": 0,  "description": "Y coordinate"},
     {"Gyro effect": 0,  "description": "Gyroscope effect"},
@@ -211,7 +211,7 @@ secondHand = [
 # Battery (電池圖示)
 battery = [
     {"TYPE": "imageCondLayer"},
-    {"Name": "Layer+id",  "description": "Layer name"},
+    {"Name": "Layer",  "description": "Layer name"},
     {"X": 0,  "description": "X coordinate"},
     {"Y": 0,  "description": "Y coordinate"},
     {"Gyro effect": 0,  "description": "Gyroscope effect"},
@@ -236,7 +236,7 @@ battery = [
 # Wifi (Wifi訊號圖示) - inherits from battery
 wifi = [
     {"TYPE": "imageCondLayer"},
-    {"Name": "Layer+id",  "description": "Layer name"},
+    {"Name": "Layer",  "description": "Layer name"},
     {"X": 0,  "description": "X coordinate"},
     {"Y": 0,  "description": "Y coordinate"},
     {"Gyro effect": 0,  "description": "Gyroscope effect"},
@@ -261,7 +261,7 @@ wifi = [
 # Event (事件文字) - inherits from text
 event = [
     {"TYPE": "textLayer"},
-    {"Name": "Layer+id",  "description": "Layer name"},
+    {"Name": "Layer",  "description": "Layer name"},
     {"Text": "",  "description": "Text content"},
     {"X": 0,  "description": "X coordinate"},
     {"Y": -120,  "description": "Y coordinate"},
@@ -303,7 +303,7 @@ event = [
 # Countdown (倒數計時) - inherits from text
 countdown = [
     {"TYPE": "textLayer"},
-    {"Name": "Layer+id",  "description": "Layer name"},
+    {"Name": "Layer",  "description": "Layer name"},
     {"Text": "",  "description": "Text content"},
     {"X": 0,  "description": "X coordinate"},
     {"Y": 28,  "description": "Y coordinate"},
@@ -345,7 +345,7 @@ countdown = [
 # Tachy (測速計)
 tachy = [
     {"TYPE": "tachymeterLayer"},
-    {"Name": "Layer+id",  "description": "Layer name"},
+    {"Name": "Layer",  "description": "Layer name"},
     {"Text": "TACHYMETER",  "description": "Title text"},
     {"X": 0,  "description": "X coordinate"},
     {"Y": 0,  "description": "Y coordinate"},
@@ -379,7 +379,7 @@ tachy = [
 # Weather (天氣圖示) - inherits from battery
 weather = [
     {"TYPE": "imageCondLayer"},
-    {"Name": "Layer+id",  "description": "Layer name"},
+    {"Name": "Layer",  "description": "Layer name"},
     {"X": 0,  "description": "X coordinate"},
     {"Y": 0,  "description": "Y coordinate"},
     {"Gyro effect": 0,  "description": "Gyroscope effect"},
@@ -404,7 +404,7 @@ weather = [
 # Shape (形狀)
 shape = [
     {"TYPE": "shapeLayer"},
-    {"Name": "Layer+id",  "description": "Layer name"},
+    {"Name": "Layer",  "description": "Layer name"},
     {"Shape": "square",  "description": "Shape type"},
     {"X": 0,  "description": "X coordinate"},
     {"Y": 0,  "description": "Y coordinate"},
@@ -426,7 +426,7 @@ shape = [
 # Marker (標記)
 marker = [
     {"TYPE": "markerLayer"},
-    {"Name": "Layer+id",  "description": "Layer name"},
+    {"Name": "Layer",  "description": "Layer name"},
     {"Text": "TACHYMETER",  "description": "Title text"},
     {"X": 0,  "description": "X coordinate"},
     {"Y": 0,  "description": "Y coordinate"},
@@ -456,7 +456,7 @@ marker = [
 # Map (地圖)
 map = [
     {"TYPE": "mapLayer"},
-    {"Name": "Layer+id",  "description": "Layer name"},
+    {"Name": "Layer",  "description": "Layer name"},
     {"X": 0,  "description": "X coordinate"},
     {"Y": 0,  "description": "Y coordinate"},
     {"Gyro effect": 0,  "description": "Gyroscope effect"},
@@ -481,7 +481,7 @@ map = [
 # Compass (指南針)
 compass = [
     {"TYPE": "imageLayer"},
-    {"Name": "Layer+id",  "description": "Layer name"},
+    {"Name": "Layer",  "description": "Layer name"},
     {"X": 0,  "description": "X coordinate"},
     {"Y": 0,  "description": "Y coordinate"},
     {"Gyro effect": 0,  "description": "Gyroscope effect"},
@@ -503,7 +503,7 @@ compass = [
 # Date (日期文字)
 date = [
     {"TYPE": "textLayer"},
-    {"Name": "Layer+id",  "description": "Layer name"},
+    {"Name": "Layer",  "description": "Layer name"},
     {"Text": "{ddw} {dnnn} {dd}",  "description": "Text content"},
     {"X": 0,  "description": "X coordinate"},
     {"Y": 120,  "description": "Y coordinate"},
@@ -545,7 +545,7 @@ date = [
 # Steps (步數文字)
 steps = [
     {"TYPE": "textLayer"},
-    {"Name": "Layer+id",  "description": "Layer name"},
+    {"Name": "Layer",  "description": "Layer name"},
     {"Text": "{ssc}",  "description": "Text content"},
     {"X": 0,  "description": "X coordinate"},
     {"Y": 30,  "description": "Y coordinate"},
@@ -587,7 +587,7 @@ steps = [
 # Moon (月相圖示)
 moon = [
     {"TYPE": "imageCondLayer"},
-    {"Name": "Layer+id",  "description": "Layer name"},
+    {"Name": "Layer",  "description": "Layer name"},
     {"X": 0,  "description": "X coordinate"},
     {"Y": 0,  "description": "Y coordinate"},
     {"Gyro effect": 0,  "description": "Gyroscope effect"},
@@ -612,7 +612,7 @@ moon = [
 # 3D (3D模型)
 model3d = [
     {"TYPE": "3DLayer"},
-    {"Name": "Layer+id",  "description": "Layer name"},
+    {"Name": "Layer",  "description": "Layer name"},
     {"X": 0,  "description": "X coordinate"},
     {"Y": 0,  "description": "Y coordinate"},
     {"Z": 0,  "description": "Z coordinate"},
@@ -632,7 +632,7 @@ model3d = [
 # Slideshow (幻燈片)
 slideshow = [
     {"TYPE": "slideshowLayer"},
-    {"Name": "Layer+id",  "description": "Layer name"},
+    {"Name": "Layer",  "description": "Layer name"},
     {"Photo": "",  "description": "Photo files"},
     {"Photo duration": 5,  "description": "Photo display duration"},
     {"Photo clip": "corner1",  "description": "Photo clip style"},
@@ -656,7 +656,7 @@ slideshow = [
 # Numbers (環形數字)
 numbers = [
     {"TYPE": "textRingLayer"},
-    {"Name": "Layer+id",  "description": "Layer name"},
+    {"Name": "Layer",  "description": "Layer name"},
     {"X": 0,  "description": "X coordinate"},
     {"Y": 0,  "description": "Y coordinate"},
     {"Gyro effect": 0,  "description": "Gyroscope effect"},
@@ -690,7 +690,7 @@ numbers = [
 # Hour Min Markers (時分標記)
 hourMinMarkers = [
     {"TYPE": "markersHMLayer"},
-    {"Name": "Layer+id",  "description": "Layer name"},
+    {"Name": "Layer",  "description": "Layer name"},
     {"X": 0,  "description": "X coordinate"},
     {"Y": 0,  "description": "Y coordinate"},
     {"Gyro effect": 0,  "description": "Gyroscope effect"},
@@ -766,7 +766,7 @@ series = [
 # Time (時間文字)
 time = [
     {"TYPE": "textLayer"},
-    {"Name": "Layer+id",  "description": "Layer name"},
+    {"Name": "Layer",  "description": "Layer name"},
     {"Text": "{dh23z}:{dmz}",  "description": "Text content"},
     {"X": 0,  "description": "X coordinate"},
     {"Y": 0,  "description": "Y coordinate"},
@@ -808,7 +808,7 @@ time = [
 # Stopwatch 1 (碼錶時間)
 stopWatch1 = [
     {"TYPE": "textLayer"},
-    {"Name": "Layer+id",  "description": "Layer name"},
+    {"Name": "Layer",  "description": "Layer name"},
     {"Text": "{swm}:{sws}:{swsss}",  "description": "Text content"},
     {"X": 0,  "description": "X coordinate"},
     {"Y": 0,  "description": "Y coordinate"},
@@ -850,7 +850,7 @@ stopWatch1 = [
 # Stopwatch 2 (碼錶開始/停止)
 stopWatch2 = [
     {"TYPE": "textLayer"},
-    {"Name": "Layer+id",  "description": "Layer name"},
+    {"Name": "Layer",  "description": "Layer name"},
     {"Text": "{swr} and 'STOP' or 'START'",  "description": "Text content"},
     {"X": -100,  "description": "X coordinate"},
     {"Y": 100,  "description": "Y coordinate"},
@@ -892,7 +892,7 @@ stopWatch2 = [
 # Stopwatch 3 (碼錶重設)
 stopWatch3 = [
     {"TYPE": "textLayer"},
-    {"Name": "Layer+id",  "description": "Layer name"},
+    {"Name": "Layer",  "description": "Layer name"},
     {"Text": "RESET",  "description": "Text content"},
     {"X": 100,  "description": "X coordinate"},
     {"Y": 100,  "description": "Y coordinate"},
