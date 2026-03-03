@@ -39,12 +39,13 @@ from PyQt5.QtCore import (
     QEasingCurve,
     QObject,
 )
-from PyQt5.QtGui import QPixmap, QIcon, QDrag, QCursor, QColor,QPainter,QPen,QBrush
+from PyQt5.QtGui import QPixmap, QIcon, QDrag, QCursor, QColor, QPainter, QPen, QBrush
 from script_view import ScriptView
 from common import FlowLayout, StackWidget, FontManager
 import components
 import summon_obj
 import re
+
 
 def load_style():
     """載入編輯視圖樣式"""
@@ -56,10 +57,14 @@ def load_style():
         print(f"Warning: Style file not found: {style_path}")
         return ""
 
+
 def Dragable(cls):
-    original_mousePress = cls.mousePressEvent
-    original_mouseMove = cls.mouseMoveEvent
-    original_mouseRelease = cls.mouseReleaseEvent
+    def do_nothing(*args, **kwargs):
+        pass
+
+    original_mousePress = getattr(cls, "mousePressEvent", do_nothing)
+    original_mouseMove = getattr(cls, "mouseMoveEvent", do_nothing)
+    original_mouseRelease = getattr(cls, "mouseReleaseEvent", do_nothing)
 
     cls.drag_start_position = None
     cls.draged = False
@@ -78,25 +83,25 @@ def Dragable(cls):
         if (event.pos() - self.drag_start_position).manhattanLength() < 5:
             return
         # 创建拖拽对象
-        self.come_from = True
-        drag = QDrag(self)
+        tmp = QWidget()
+        drag = QDrag(tmp)
         mime_data = QMimeData()
         # 存储组件信息（tooltip）
         mime_data.setText(self.name)
         drag.setMimeData(mime_data)
         # 执行拖拽
-        result = drag.exec_(Qt.CopyAction)
-        if result is result:
-            self.signal.emit("drop")
+        drag.exec_(Qt.CopyAction)
         # 重置拖拽起始位置
         self.drag_start_position = None
         self.draged = True
+        self.mouseReleaseEvent(event)
 
     def mouseReleaseEvent(self, event):
         if self.draged is False:
             original_mousePress(self, event)
-            self.draged = False
+        self.draged = False
         original_mouseRelease(self, event)
+        print("succ")
 
     cls.mousePressEvent = mousePressEvent
     cls.mouseMoveEvent = mouseMoveEvent
@@ -210,6 +215,7 @@ class OverrideWidget(QWidget):
         self.raise_()
         super().show()
 
+
 class DragVisual(QLabel):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -260,103 +266,147 @@ class DragVisual(QLabel):
         else:
             self.setGeometry(target)
 
-#@Dragable
+
+@Dragable
 class ExplororItem(QTreeWidgetItem):
-    type_enum={'animationWidget': 0,
-                'baseLayer': 1, 
-                'chartLayer': 2, 
-                'complicationLayer': 3, 
-                'curvedTextLayer': 4, 
-                'directionalLightLayer': 5, 
-                'imageCondLayer': 6, 
-                'imageGifLayer': 7, 
-                'imageLayer': 8, 
-                'layer3D': 9, 
-                'mapLayer': 10, 
-                'markerLayer': 11, 
-                'markersHMLayer': 12, 
-                'progressLayer': 13, 
-                'ringLayer': 14, 
-                'roundedRectangleLayer': 15, 
-                'seriesLayer': 16, 
-                'shapeLayer': 17, 
-                'slideshowLayer': 18, 
-                'tachymeterLayer': 19, 
-                'textLayer': 20, 
-                'textRingLayer': 21
-                }
-    def __init__(self,layer_type,signal,parent):
-        super().__init__()
-        self.layer_type=layer_type
-        self._parent=parent
-        self.signal=signal
-        self.setText(1,re.sub(r"Layer$","",self.layer_type))
-        self.signal.connect(self.passive_rename)
-        self.level=0
-        print("y")
+    def __init__(self, layer_type, att_signal, hash_id, parent):
+        if layer_type == "group":
+            super().__init__(1001)
+        else:
+            super().__init__(1000)
+        self.layer_type = layer_type
+        self._parent = parent
+        self.att_signal = att_signal
+        self.setText(1, re.sub(r"Layer$", "", self.layer_type))
+        self.att_signal.connect(self.passive_rename)
+        self.level = 0
+        self.name = str(hash_id)
 
-    def passive_rename(self,name):
-        self.setText(0,name)
-        self.name=name
+    def passive_rename(self, name):
+        self.setText(0, name)
+        self.component_name = name
 
-    def update_level(self,level):
-        self.level=level
+    def update_level(self, level):
+        self.level = level
 
-    def __lt__(self,other):
-        condition=getattr(self._parent,"sort_basis","level")
-        if condition=="level":
+    def __lt__(self, other):
+        condition = getattr(self._parent, "sort_basis", "layer")
+        if condition == "layer":
             return self.level < other.level
-        if condition=="name":
-            return self.name < other.name
-        if condition=="layer":
+        if condition == "name":
+            return self.component_name < other.component_name
+        if condition == "type":
             return self.layer_type < other.layer_type
         return
 
 
+class ExplororTree(QTreeWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("explorerTree")
+        self.setMaximumWidth(300)
+        self.setColumnCount(2)
+        self.setHeaderLabels(["Name", "Layer"])
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.setIndentation(0)
+        header = self.header()
+        header.setStretchLastSection(True)
+        self.setColumnWidth(0,140)
+        self.setColumnWidth(1,70)
+        self.verticalScrollBar().valueChanged.connect(self.on_v_scroll)
+        self.view_last_item=None
+
+    def mouseMoveEvent(self, event):
+        super().mouseMoveEvent(event)
+        try:
+            self.currentItem().mouseMoveEvent(event)
+        except AttributeError:
+            pass
+
+    def mousePressEvent(self, event):
+        super().mousePressEvent(event)
+        try:
+            self.currentItem().mousePressEvent(event)
+        except AttributeError:
+            pass
+
+    def mouseReleaseEvent(self, event):
+        super().mouseReleaseEvent(event)
+        try:
+            self.currentItem().mouseReleaseEvent(event)
+        except AttributeError:
+            pass
+        
+    def on_v_scroll(self,_):
+        self.view_last_item=None
+
+    def required_visual_effects(self, pos):
+        item=self.itemAt(pos)
+        if item is None:
+            if pos.y()<0:
+                return self.required_visual_effects(QPoint(1,1))
+            for y in range(self.viewport().rect().height(),0,-10):
+                if  self.view_last_item is not None:
+                    item=self.view_last_item
+                    break
+                item=self.itemAt(1,y)
+                if item is not None:
+                    self.view_last_item=item
+                    break
+        offset=self.viewport().pos()+self.header().rect().bottomLeft()+QPoint(8,0)
+        if item is None:
+            rect=self.viewport().rect()
+            return rect.topLeft()+offset,QSize(rect.width(),5)
+        rect=self.visualItemRect(item)
+        if item.type()==1000:
+            if item is self.itemAt(1,pos.y()+self.visualItemRect(item).height()//2):
+                return QPoint(rect.center().x(),rect.top())+offset,QSize(rect.width(),5)
+            else:
+                return QPoint(rect.center().x(),rect.bottom())+offset,QSize(rect.width(),5)
+        return rect.center()+offset,rect.size()
+
+
 class Exploror(QWidget):
-    receive=pyqtSignal(str,dict,int)
-    rename=pyqtSignal(int,str)
-    rearrange=pyqtSignal(int,int)
-    inspection=pyqtSignal(int)
-    copy=pyqtSignal(int)
-    paste=pyqtSignal(int)
-    cut=pyqtSignal(int)
-    delete=pyqtSignal(int)
+    receive = pyqtSignal(str, dict, int)
+    rename = pyqtSignal(int, str)
+    rearrange = pyqtSignal(int, int)
+    inspection = pyqtSignal(int)
+    copy = pyqtSignal(int)
+    paste = pyqtSignal(int)
+    cut = pyqtSignal(int)
+    delete = pyqtSignal(int)
+
     def __init__(self, data=None, id_stack=None, signal=None, parent=None):
         super().__init__(parent)
         self.setObjectName("explorer")
-        self._vlayout=QVBoxLayout(self)
-        self._vlayout.setContentsMargins(7,5,7,0)
-        hlayout=QHBoxLayout(self)
-        sort_label=QLabel("      Sort by")
+        self.setMaximumWidth(314)
+        self._vlayout = QVBoxLayout(self)
+        self._vlayout.setContentsMargins(7, 5, 7, 0)
+        hlayout = QHBoxLayout(self)
+        sort_label = QLabel("      Sort by")
         sort_label.setObjectName("explorerSortLabel")
-        self.sort_option=QComboBox()
+        self.sort_option = QComboBox()
         self.sort_option.setObjectName("explorerCombo")
-        self.sort_option.addItems(["level","name","layer"])
-        hlayout.addWidget(sort_label,2)
-        hlayout.addWidget(self.sort_option,3)
-        self._vlayout.addLayout(hlayout,1)
-        self.tree=QTreeWidget()
-        self.tree.setObjectName("explorerTree")
-        self.setMaximumWidth(300)
-        self.tree.setColumnCount(3)
-        self.tree.setHeaderLabels(["Name","Layer","     "])
-        self.tree.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.tree.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self._vlayout.addWidget(self.tree,19)
+        self.sort_option.addItems(["level", "name", "layer"])
+        hlayout.addWidget(sort_label, 2)
+        hlayout.addWidget(self.sort_option, 3)
+        self._vlayout.addLayout(hlayout, 1)
+        self.tree = ExplororTree(self)
+        self._vlayout.addWidget(self.tree, 19)
         self.override = OverrideWidget(
             "drop here\nadd new item", "img/edit/exp_drag.png", self
         )
         self.setAcceptDrops(True)
         self.send_all = signal
         self.receive.connect(self.add_item)
-        self.items={}
-        self.id_stack=id_stack
+        self.items = {}
+        self.id_stack = id_stack
 
-    def add_item(self,layer_type, signal_dict, hash_id):
-        signal=signal_dict["Name"]
-        new=ExplororItem(layer_type,signal,self)
-        self.items[hash_id]=new
+    def add_item(self, layer_type, signal_dict, hash_id):
+        signal = signal_dict["Name"]
+        new = ExplororItem(layer_type, signal, hash_id, self)
+        self.items[hash_id] = new
         self.tree.setCurrentItem(new)
         self.tree.addTopLevelItem(new)
 
@@ -374,6 +424,7 @@ class Exploror(QWidget):
     def dragMoveEvent(self, event):
         """拖拽移動時更新"""
         super().dragMoveEvent(event)
+        event.acceptProposedAction()
 
     def dragLeaveEvent(self, event):
         """拖拽離開時重置"""
@@ -384,12 +435,16 @@ class Exploror(QWidget):
         self.override.hide()
 
     def required_visual_effects(self, event):
-        return event.pos(), QSize(60, 60)
+        pos=self.mapToGlobal(event.pos())
+        pos=self.tree.viewport().mapFromGlobal(pos)
+        pos,size=self.tree.required_visual_effects(pos)
+        return pos,size
+
 
 class WatchPreview(QGraphicsView):
     select = pyqtSignal(object)
     summon = pyqtSignal(object, object, object)
-    receive = pyqtSignal(object,object,object)
+    receive = pyqtSignal(object, object, object)
 
     # 場景固定大小 (錶面尺寸)
     SCENE_SIZE = 454
@@ -400,7 +455,9 @@ class WatchPreview(QGraphicsView):
         self.hash_table = {}
         self.sence = QGraphicsScene()
         # 設定固定的場景範圍
-        self.sence.setSceneRect(-self.SCENE_SIZE/2, -self.SCENE_SIZE/2, self.SCENE_SIZE, self.SCENE_SIZE)
+        self.sence.setSceneRect(
+            -self.SCENE_SIZE / 2, -self.SCENE_SIZE / 2, self.SCENE_SIZE, self.SCENE_SIZE
+        )
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         self.setAcceptDrops(True)
         # 確保 viewport 也接受拖放
@@ -446,10 +503,7 @@ class WatchPreview(QGraphicsView):
 
         # 設置圓形的位置和大小
         self._background_circle.setRect(
-            -diameter/2,
-            -diameter/2,
-            diameter,
-            diameter
+            -diameter / 2, -diameter / 2, diameter, diameter
         )
 
     def resizeEvent(self, event):
@@ -469,10 +523,9 @@ class WatchPreview(QGraphicsView):
     def summon_component(self, layer_type, signal_dict, hash_id):
         """根據屬性和圖層類型創建元件並顯示在預覽區"""
         # 使用 summon_obj 的 create_layer 函數創建對應的圖層
-        layer = summon_obj.create_layer(layer_type, signal_dict,hash_id,self.sence)
+        layer = summon_obj.create_layer(layer_type, signal_dict, hash_id, self.sence)
         # 儲存到 hash_table
         self.hash_table[hash_id] = layer
-
 
     def eventFilter(self, watched, event):
         if event.type() == QEvent.MouseButtonPress:
@@ -571,6 +624,7 @@ class ComponentPanel(QScrollArea):
     def required_visual_effects(self, event):
         return event.pos(), QSize(60, 60)
 
+
 class AttributeForm(QScrollArea):
     """Scrollable form containing multiple attribute containers"""
 
@@ -582,7 +636,7 @@ class AttributeForm(QScrollArea):
         open_script_editor = pyqtSignal(object)
         open_widget_editor = pyqtSignal()
 
-        def __init__(self, title,value,description,typ,signal, parent=None):
+        def __init__(self, title, value, description, typ, signal, parent=None):
             super().__init__(parent)
             self.name = title
             self.attr_type = typ
@@ -605,15 +659,15 @@ class AttributeForm(QScrollArea):
                 self._create_bool_ui()
             elif self.attr_type == "file":
                 self._create_file_ui()
-            elif self.attr_type == "font" or isinstance(self.attr_type,list):
+            elif self.attr_type == "font" or isinstance(self.attr_type, list):
                 self._create_option_ui()
-            elif isinstance(self.attr_type,tuple) and self.attr_type[2]==1:
+            elif isinstance(self.attr_type, tuple) and self.attr_type[2] == 1:
                 self._create_int_ui()
-            elif isinstance(self.attr_type,tuple) and self.attr_type[2]==0:
+            elif isinstance(self.attr_type, tuple) and self.attr_type[2] == 0:
                 self._create_num_ui()
             else:
                 self._create_str_ui()
-            
+
             self.right.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             if len(self.name) <= 8:
                 self.left.setFixedWidth(80)
@@ -631,14 +685,16 @@ class AttributeForm(QScrollArea):
             self.signal.connect(self.set_value)
 
         def _create_str_ui(self):
-            if self.name in ["Text","Script"]:
+            if self.name in ["Text", "Script"]:
                 self._create_num_ui()
                 return
             self.right = QLineEdit()
             self.right.setObjectName("attrInput")
             self.right.textChanged.connect(self._on_text_changed)
-            if self.name=="Name":
-                self.right.editingFinished.connect(lambda:self.value_processing(self.right.text()))
+            if self.name == "Name":
+                self.right.editingFinished.connect(
+                    lambda: self.value_processing(self.right.text())
+                )
             else:
                 self.right.textChanged.connect(self.value_processing)
             self.right.setText(str(self.default))
@@ -646,20 +702,22 @@ class AttributeForm(QScrollArea):
             self.right.setAcceptDrops(False)
 
         def _create_int_ui(self):
-            if self.attr_type[1]-self.attr_type[0]<=100:
+            if self.attr_type[1] - self.attr_type[0] <= 100:
                 self.right = QWidget()
                 right_layout = QHBoxLayout(self.right)
                 slide = QSlider()
-                slide.setRange(self.attr_type[0],self.attr_type[1])
-                right_layout.addWidget(slide,4)
-                self.input=QLineEdit()
-                right_layout.addWidget(slide,1)
-                slide.valueChanged.connect(lambda text:self.input.setText(str(text)))
+                slide.setRange(self.attr_type[0], self.attr_type[1])
+                right_layout.addWidget(slide, 4)
+                self.input = QLineEdit()
+                right_layout.addWidget(slide, 1)
+                slide.valueChanged.connect(lambda text: self.input.setText(str(text)))
+
                 def textEdit(text):
                     try:
                         slide.setValue(int(text))
                     except:
                         pass
+
                 self.input.textEdited.connect(textEdit)
                 self.input.textChanged.connect(self._on_text_changed)
                 self.input.textChanged.connect(self.value_processing)
@@ -773,7 +831,7 @@ class AttributeForm(QScrollArea):
                 self,
                 "選擇檔案",
                 "",
-                "All Files (*);;Images (*.png *.jpg *.jpeg *.gif *.bmp);;3D Models (*.obj *.gltf *.glb)"
+                "All Files (*);;Images (*.png *.jpg *.jpeg *.gif *.bmp);;3D Models (*.obj *.gltf *.glb)",
             )
             if file_path:
                 self._value = file_path
@@ -821,26 +879,26 @@ class AttributeForm(QScrollArea):
 
         def get_value(self):
             return self._value
-        
-        def value_processing(self,value):
+
+        def value_processing(self, value):
             try:
                 if self.attr_type == "bool":
-                    value=bool(value)
-                elif isinstance(self.attr_type,tuple) and self.attr_type[2]==1:
-                    value=int(value)
-                elif isinstance(self.attr_type,tuple) and self.attr_type[2]==0:
-                    value=float(value)
-                    if self.name=="Rotation":
-                        value=value%360
-                    value=min(value,self.attr_type[1])
-                    value=max(value,self.attr_type[0])
-                    value=float(value)
+                    value = bool(value)
+                elif isinstance(self.attr_type, tuple) and self.attr_type[2] == 1:
+                    value = int(value)
+                elif isinstance(self.attr_type, tuple) and self.attr_type[2] == 0:
+                    value = float(value)
+                    if self.name == "Rotation":
+                        value = value % 360
+                    value = min(value, self.attr_type[1])
+                    value = max(value, self.attr_type[0])
+                    value = float(value)
                 else:
-                    value=str(value)
+                    value = str(value)
                 self.signal.emit(value)
             except:
                 pass
-            
+
         def valid(self, text):
             try:
                 text = str(text)
@@ -854,7 +912,7 @@ class AttributeForm(QScrollArea):
             if self._value == self.valid(value):
                 return
             self._value = value
-            if isinstance(self.attr_type,list) or self.attr_type=="font":
+            if isinstance(self.attr_type, list) or self.attr_type == "font":
                 index = self.right.findText(str(value))
                 if index >= 0:
                     self.right.setCurrentIndex(index)
@@ -865,7 +923,7 @@ class AttributeForm(QScrollArea):
                     self._update_color_button()
                 except:
                     pass
-            elif isinstance(self.attr_type,tuple):
+            elif isinstance(self.attr_type, tuple):
                 self.input.setText(str(value))
             elif self.attr_type == "widget":
                 self._value = None
@@ -888,18 +946,18 @@ class AttributeForm(QScrollArea):
     request_script_editor = pyqtSignal(object)
     open_widget_editor = pyqtSignal()
     value_changed = pyqtSignal(str, object)
-    go_back=pyqtSignal()
-    go_home=pyqtSignal()
-    name_disturbute={}
+    go_back = pyqtSignal()
+    go_home = pyqtSignal()
+    name_disturbute = {}
 
     def __init__(self, attribute_list, name_distrbute, parent=None):
         super().__init__(parent)
         self._setup_scroll_area()
         self._containers = {}
         self._layer_type = attribute_list[0]["TYPE"]
-        self.name_distrbute=name_distrbute
-        self.child_widget=None
-        if attribute_list[0]["TYPE"]!="baseLayer":
+        self.name_distrbute = name_distrbute
+        self.child_widget = None
+        if attribute_list[0]["TYPE"] != "baseLayer":
             self.back_container(attribute_list[0]["TYPE"])
 
     def _setup_scroll_area(self):
@@ -913,16 +971,21 @@ class AttributeForm(QScrollArea):
         self._vlayout.setContentsMargins(10, 20, 10, 20)
         self._vlayout.setSpacing(4)
 
-    def back_container(self,typ):
+    def back_container(self, typ):
         import components.common as common_defs
-        hlayout=QHBoxLayout()
-        back=QPushButton("< Back")
-        home=QPushButton("Home")
+
+        hlayout = QHBoxLayout()
+        back = QPushButton("< Back")
+        home = QPushButton("Home")
         hlayout.addWidget(back)
-        if typ!="animationWidget":
-            layer_combo=QComboBox()
+        if typ != "animationWidget":
+            layer_combo = QComboBox()
             layer_combo.setObjectName("attrCombo")
-            layer_names=[name for name in common_defs.__all__ if name!="baseLayer" and name!="animationWidget"]
+            layer_names = [
+                name
+                for name in common_defs.__all__
+                if name != "baseLayer" and name != "animationWidget"
+            ]
             layer_combo.addItems(layer_names)
             if self._layer_type and self._layer_type in layer_names:
                 layer_combo.setCurrentText(self._layer_type)
@@ -935,22 +998,22 @@ class AttributeForm(QScrollArea):
         self._vlayout.addLayout(hlayout)
 
     def add_container(self, title, value, description, typ, signal):
-        container = self.AttributeContainer(title,value,description,typ,signal)
+        container = self.AttributeContainer(title, value, description, typ, signal)
         container.open_script_editor.connect(self.request_script_editor.emit)
         container.open_widget_editor.connect(self.open_widget_editor.emit)
         self._containers[title] = container
-        if title!="Display":
+        if title != "Display":
             self._vlayout.addWidget(container)
-        
+
         if title == "Name":
             # 【關鍵修改 1】初始化時先預設為 None，並主動呼叫一次改名驗證，確保拖入新元件時名稱就不會重複
-            container.last_valid_name = None 
-            self.rename_valid(value, container,signal)
-            
-            # 綁定使用者修改名稱的信號
-            signal.connect(lambda text: self.rename_valid(text, container,signal))
+            container.last_valid_name = None
+            self.rename_valid(value, container, signal)
 
-    def rename_valid(self, new_name, container,signal):
+            # 綁定使用者修改名稱的信號
+            signal.connect(lambda text: self.rename_valid(text, container, signal))
+
+    def rename_valid(self, new_name, container, signal):
         old_name = getattr(container, "last_valid_name", None)
 
         if old_name == new_name:
@@ -960,8 +1023,10 @@ class AttributeForm(QScrollArea):
             del self.name_distrbute[old_name]
 
         final_name = new_name
-        base_name = re.sub(r' \d$', '', new_name)
-        counter = self.name_distrbute[final_name] if final_name in self.name_distrbute else 1
+        base_name = re.sub(r" \d$", "", new_name)
+        counter = (
+            self.name_distrbute[final_name] if final_name in self.name_distrbute else 1
+        )
 
         while final_name in self.name_distrbute:
             final_name = f"{base_name} {counter}"
@@ -977,11 +1042,11 @@ class AttributeForm(QScrollArea):
 
     def pack(self):
         values = []
-        values.append({"TYPE":self._layer_type})
+        values.append({"TYPE": self._layer_type})
         for name, container in self._containers.items():
-            item={name:container.get_value(),"description":container.description}
+            item = {name: container.get_value(), "description": container.description}
             if item[name] is None:
-                item[name]=self.child_widget.pack()
+                item[name] = self.child_widget.pack()
             values.append(item)
         return values
 
@@ -997,17 +1062,18 @@ class AttributeForm(QScrollArea):
     def get_all_values(self):
         return {name: c.get_value() for name, c in self._containers.items()}
 
-    def connect_tip_signal(self,tip_signal):
+    def connect_tip_signal(self, tip_signal):
         for container in self._containers.values():
             container.tip_signal.connect(tip_signal.emit)
 
-    def get_signal(self,name):
+    def get_signal(self, name):
         return self._containers[name].signal
+
 
 class AttributePanal(StackWidget):
     summon_widget = pyqtSignal(list)  # (typ, pos, hash_id)
     delect_widget = pyqtSignal(object, object)
-    send_obj = pyqtSignal(object,object,object)
+    send_obj = pyqtSignal(object, object, object)
     request_script_editor = pyqtSignal(object)  # 轉發 container 的腳本編輯器請求
     open_widget_editor = pyqtSignal()
 
@@ -1022,15 +1088,15 @@ class AttributePanal(StackWidget):
         self.tip_signal = tip_signal
         self._attribute_cache = {}  # {hash_id: 已生成的屬性列表}
         self._widget_views = {}  # {container_id: widget_view} 儲存每個 container 的 widget 視窗
-        self.opened_widget=[]
-        self.name={}
+        self.opened_widget = []
+        self.name = {}
         if id_stack is None:
             self.id_stack = [2]
         else:
-            self.id_stack =id_stack
-        self.addWidget(getattr(components,"watchSetting"),1)
-        self.opened_widget=[self.currentWidget()]
-    
+            self.id_stack = id_stack
+        self.addWidget(getattr(components, "watchSetting"), 1)
+        self.opened_widget = [self.currentWidget()]
+
     def get_hash_id(self):
         if self.id_stack[-1] is self.id_stack[0]:
             out = self.id_stack.pop()
@@ -1040,25 +1106,27 @@ class AttributePanal(StackWidget):
             return self.id_stack.pop()
 
     def addWidget(self, att_list, id=None, create=False, switch=True):
-        widget=AttributeForm(att_list,self.name,self)
-        layer_type=att_list.pop(0)["TYPE"]
-        layer_def=getattr(components,layer_type,{})
-        signal_dict={}
+        widget = AttributeForm(att_list, self.name, self)
+        layer_type = att_list.pop(0)["TYPE"]
+        layer_def = getattr(components, layer_type, {})
+        signal_dict = {}
 
         for att in att_list:
-            signal=summon_obj.Signal()
-            title,value=list(att.items())[0]
-            signal_dict[title]=signal
-            description=att["description"]
-            typ=layer_def.get(title,[])
-            if typ=="widget":
-                display=value[1]["Display"]
-                widget_id=self.get_hash_id()
-                signal_dict.update(self.addWidget(value,widget_id,False,False))
+            signal = summon_obj.Signal()
+            title, value = list(att.items())[0]
+            signal_dict[title] = signal
+            description = att["description"]
+            typ = layer_def.get(title, [])
+            if typ == "widget":
+                display = value[1]["Display"]
+                widget_id = self.get_hash_id()
+                signal_dict.update(self.addWidget(value, widget_id, False, False))
                 widget.child_widget = self.find(widget_id)
                 signal = widget.child_widget.get_signal(display)
-                widget.open_widget_editor.connect(lambda:self.setCurrentWidget(self.find(widget_id)))
-            widget.add_container(title,value,description,typ,signal)
+                widget.open_widget_editor.connect(
+                    lambda: self.setCurrentWidget(self.find(widget_id))
+                )
+            widget.add_container(title, value, description, typ, signal)
 
         if self.tip_signal is not None:
             widget.connect_tip_signal(self.tip_signal)
@@ -1066,15 +1134,15 @@ class AttributePanal(StackWidget):
         widget.go_back.connect(self.go_back)
         widget.go_home.connect(self.go_home)
         if id is None:
-            id=self.get_hash_id()
+            id = self.get_hash_id()
         if create:
-            self.send_obj.emit(layer_type,signal_dict,id)
+            self.send_obj.emit(layer_type, signal_dict, id)
         super().addWidget(widget, id, switch)
         return signal_dict
 
     def go_back(self):
         self.opened_widget.pop()
-        if self.opened_widget==[]:
+        if self.opened_widget == []:
             self.toggle_widget(1)
             return
         self.toggle_widget(self.opened_widget[-1])
@@ -1082,13 +1150,13 @@ class AttributePanal(StackWidget):
 
     def go_home(self):
         self.toggle_widget(1)
-        self.opened_widget=[self.find(1)]
+        self.opened_widget = [self.find(1)]
 
-    def toggle_widget(self,widget):
-        if isinstance(widget,QWidget):
+    def toggle_widget(self, widget):
+        if isinstance(widget, QWidget):
             super().setCurrentWidget(widget)
             return
-        result=self.find(widget)
+        result = self.find(widget)
         if result:
             super().setCurrentWidget(result)
             return
@@ -1096,31 +1164,39 @@ class AttributePanal(StackWidget):
 
     def setCurrentIndex(self, index):
         super().setCurrentIndex(index)
-        if len(self.opened_widget)==0 or not self.opened_widget[-1] is self.currentWidget():
+        if (
+            len(self.opened_widget) == 0
+            or not self.opened_widget[-1] is self.currentWidget()
+        ):
             self.opened_widget.append(self.currentWidget())
 
     def setCurrentWidget(self, index):
         super().setCurrentWidget(index)
-        if len(self.opened_widget)==0 or not self.opened_widget[-1] is self.currentWidget():
+        if (
+            len(self.opened_widget) == 0
+            or not self.opened_widget[-1] is self.currentWidget()
+        ):
             self.opened_widget.append(self.currentWidget())
 
     def _on_summon_widget(self, args):
         """處理 summon_widget 信號"""
-        while len(args)<3:
+        while len(args) < 3:
             args.append(None)
-        args=tuple(args)
-        typ, pos, hash_id=args
+        args = tuple(args)
+        typ, pos, hash_id = args
         try:
-            att_list=self.find(typ).pack()
+            att_list = self.find(typ).pack()
         except AttributeError:
-            att_list=getattr(components,typ)
+            att_list = getattr(components, typ)
         if pos is not None:
             for att in att_list:
-                if "X" in att: att["X"]=pos[0]
-                if "Y" in att: att["Y"]=pos[1] 
+                if "X" in att:
+                    att["X"] = pos[0]
+                if "Y" in att:
+                    att["Y"] = pos[1]
         if hash_id is None:
-            hash_id=self.get_hash_id()
-        self.addWidget(att_list,hash_id,True,True)
+            hash_id = self.get_hash_id()
+        self.addWidget(att_list, hash_id, True, True)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -1150,6 +1226,7 @@ class AttributePanal(StackWidget):
 
     def required_visual_effects(self, event):
         return self.rect().center(), self.size()
+
 
 class EditView(QWidget):
     exp_singal = pyqtSignal(object, object, object)
@@ -1214,10 +1291,7 @@ class EditView(QWidget):
         self.explorer.receive.emit(layer_type, signal_dict, hash_id)
 
     def com_call(self, data):
-        if data == "drop":
-            self.item_drop()
-            return
-        self.attribute.summon_widget.connect([data])
+        self.attribute.summon_widget.emit([data])
 
     def pre_call(self, obj_type, pos, hash_id):
         if hash_id == 0:
@@ -1231,11 +1305,6 @@ class EditView(QWidget):
             return out
         else:
             return self.id_stack.pop()
-
-    def signal_manager(self, *state):
-        if state[1] in ["drop", "copy"]:
-            self.item_drop()
-            return
 
     def show_all_overrides(self):
         """顯示所有 OverrideWidget"""
@@ -1264,19 +1333,6 @@ class EditView(QWidget):
             return parent
         return watched
 
-    def _get_target_widget_at_pos(self, global_pos):
-        """根據全局座標取得對應的拖放目標 widget"""
-        for widget in [
-            self.explorer,
-            self.watch_preview,
-            self.components,
-            self.attribute,
-        ]:
-            widget_rect = QRect(widget.mapToGlobal(QPoint(0, 0)), widget.size())
-            if widget_rect.contains(global_pos):
-                return widget
-        return None
-
     def eventFilter(self, watched, event):
         target = self._get_drop_target(watched)
 
@@ -1300,6 +1356,9 @@ class EditView(QWidget):
             # 只有當滑鼠真正離開 target 邊界時才顯示 override
             if not target_rect.contains(cursor_pos) and hasattr(target, "override"):
                 target.override.show()
+
+        if event.type() == QEvent.Drop:
+            self.dropEvent(event)
 
         return False
 
@@ -1331,6 +1390,6 @@ class EditView(QWidget):
         self.item_drop()
 
 
-#TODO:
-#檔案總管排序
-#檔案總管圖層管理
+# TODO:
+# 檔案總管排序
+# 檔案總管圖層管理
