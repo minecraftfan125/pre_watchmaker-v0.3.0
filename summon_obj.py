@@ -395,6 +395,7 @@ class Component:
         self.rotate_value=0
         self.skew_x_value=0
         self.skew_y_value=0
+        self.connect("Layer", self.order)
         self.connect("X", self.move_x)
         self.connect("Y", self.move_y)
         self.connect("Skew X", self.skew_x)
@@ -405,6 +406,9 @@ class Component:
 
     def lua_translator(self):
         pass
+
+    def order(self,value):
+        self.setZValue(-999+value)
 
     def rename(self, value):
         self.name = value
@@ -463,7 +467,8 @@ class Component:
             pass
 
     def connect(self, key, method):
-        self.attribute[key].connect(method)
+        if key in self.attribute:
+            self.attribute[key].connect(method)
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.ItemSelectedChange:

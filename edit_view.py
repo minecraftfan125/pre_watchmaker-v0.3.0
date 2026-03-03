@@ -269,22 +269,28 @@ class DragVisual(QLabel):
 
 @Dragable
 class ExplororItem(QTreeWidgetItem):
-    def __init__(self, layer_type, att_signal, hash_id, parent):
+    def __init__(self, layer_type, att_signal_dict, hash_id, parent):
         if layer_type == "group":
             super().__init__(1001)
         else:
             super().__init__(1000)
         self.layer_type = layer_type
         self._parent = parent
-        self.att_signal = att_signal
+        self.att_signal_dict = att_signal_dict
         self.setText(1, re.sub(r"Layer$", "", self.layer_type))
-        self.att_signal.connect(self.passive_rename)
+        self.att_signal_dict["Name"].connect(self.passive_rename)
+        self.att_signal_dict["Layer"].connect(self.change_z_order)
         self.level = 0
-        self.name = str(hash_id)
 
     def passive_rename(self, name):
         self.setText(0, name)
-        self.component_name = name
+        self.name = "$"+name
+
+    def change_z_order(self,value):
+        if value==self.level:
+            return
+        self.level=value
+        self.att_signal_dict["Layer"].emit(value)
 
     def update_level(self, level):
         self.level = level
@@ -294,7 +300,7 @@ class ExplororItem(QTreeWidgetItem):
         if condition == "layer":
             return self.level < other.level
         if condition == "name":
-            return self.component_name < other.component_name
+            return self.name < other.name
         if condition == "type":
             return self.layer_type < other.layer_type
         return
@@ -404,9 +410,8 @@ class Exploror(QWidget):
         self.id_stack = id_stack
 
     def add_item(self, layer_type, signal_dict, hash_id):
-        signal = signal_dict["Name"]
-        new = ExplororItem(layer_type, signal, hash_id, self)
-        self.items[hash_id] = new
+        new = ExplororItem(layer_type, signal_dict, hash_id, self)
+        self.items[new.name] = (hash_id,new)
         self.tree.setCurrentItem(new)
         self.tree.addTopLevelItem(new)
 
@@ -432,6 +437,15 @@ class Exploror(QWidget):
         self.override.show()
 
     def dropEvent(self, event):
+        if event.mimeData().hasText():
+            text=event.mimeData().text()
+            try:
+                hash_id=int(text)
+            except ValueError:
+                if text.startswith("$"):
+
+                else:
+
         self.override.hide()
 
     def required_visual_effects(self, event):

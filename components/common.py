@@ -3,23 +3,24 @@
 # Based on all_att.txt
 # ============================================================================
 
-baseLayer={
-    "Watch name":"str",
-    "Discription":"str",
-    "Background":"color",
-    "Tags":"str",
-    "Shape":["Circle","Square","Apple"],
-    "Author":"str",
-    "Web link":"str",
-    "Transition to bright":["None"],
-    "Transition to dim":["None"],
-    "Script":"str",
-    "Indicators":"str"
+baseLayer = {
+    "Watch name": "str",
+    "Discription": "str",
+    "Background": "color",
+    "Tags": "str",
+    "Shape": ["Circle", "Square", "Apple"],
+    "Author": "str",
+    "Web link": "str",
+    "Transition to bright": ["None"],
+    "Transition to dim": ["None"],
+    "Script": "str",
+    "Indicators": "str",
 }
 
 # Animation Widget (動畫控制器)
-animationWidget = {"Display": "str",
-    "Animation in": ["None","test"],
+animationWidget = {
+    "Display": "str",
+    "Animation in": ["None", "test"],
     "Delay start": (1, 2048, 0),
     "Duration in": (1, 2048, 0),
     "Duration on": (1, 2048, 0),
@@ -29,10 +30,13 @@ animationWidget = {"Display": "str",
     "Repeat count": [1],
     "Restart on load": "bool",
     "Restart on bright": "bool",
-    "Restart on text change": "bool"}
+    "Restart on text change": "bool",
+}
 
 # Text Layer (文字圖層)
-textLayer = {"Name": "str",
+textLayer = {
+    "Name": "str",
+    "Layer": (0, 5000, 1),
     "Text": "str",
     "X": (-1280, 1280, 0),
     "Y": (-1280, 1280, 0),
@@ -48,25 +52,40 @@ textLayer = {"Name": "str",
     "Skew X": (0, 90, 0),
     "Skew Y": (0, 90, 0),
     "Opacity": (0, 100, 0),
-    "Alignment": ["Center","Top left","Top center","Top right","Center left","Center right","Bottom left","Bottom center","Bottom right"],
+    "Alignment": [
+        "Center",
+        "Top left",
+        "Top center",
+        "Top right",
+        "Center left",
+        "Center right",
+        "Bottom left",
+        "Bottom center",
+        "Bottom right",
+    ],
     "Transform": ["None"],
     "Display": ["Always"],
     "Shader": ["None"],
     "Tap action": ["None"],
     "Text effect": ["None"],
-    "Keep position if card displayed": "bool"}
+    "Keep position if card displayed": "bool",
+}
 
 # Directional Light Layer (方向光源圖層)
-directionalLightLayer = {"Name": "str",
+directionalLightLayer = {
+    "Name": "str",
     "Enable": "bool",
     "Intensity": (1, 2048, 0),
     "Direction X": (1, 2048, 0),
     "Direction Y": (1, 2048, 0),
     "Direction Z": (1, 2048, 0),
-    "Color": "color"}
+    "Color": "color",
+}
 
 # 3D Layer (3D圖層)
-layer3D = {"Name": "str",
+layer3D = {
+    "Name": "str",
+    "Layer": (0, 5000, 1),
     "Photo": "file",
     "X": (-1280, 1280, 0),
     "Y": (-1280, 1280, 0),
@@ -80,10 +99,13 @@ layer3D = {"Name": "str",
     "Gyro effect": (1, 2048, 0),
     "Opacity": (0, 100, 0),
     "Color": "color",
-    "Display": ["Always"]}
+    "Display": ["Always"],
+}
 
 # Curved Text Layer (曲線文字圖層) - inherits from textLayer
-curvedTextLayer = {"Name": "str",
+curvedTextLayer = {
+    "Name": "str",
+    "Layer": (0, 5000, 1),
     "Text": "str",
     "X": (-1280, 1280, 0),
     "Y": (-1280, 1280, 0),
@@ -99,7 +121,17 @@ curvedTextLayer = {"Name": "str",
     "Skew X": (0, 90, 0),
     "Skew Y": (0, 90, 0),
     "Opacity": (0, 100, 0),
-    "Alignment": ["Center","Top left","Top center","Top right","Center left","Center right","Bottom left","Bottom center","Bottom right"],
+    "Alignment": [
+        "Center",
+        "Top left",
+        "Top center",
+        "Top right",
+        "Center left",
+        "Center right",
+        "Bottom left",
+        "Bottom center",
+        "Bottom right",
+    ],
     "Transform": ["None"],
     "Display": ["Always"],
     "Shader": ["None"],
@@ -107,10 +139,13 @@ curvedTextLayer = {"Name": "str",
     "Text effect": ["None"],
     "Keep position if card displayed": "bool",
     "Radius": (1, 2048, 0),
-    "Direction": ["Up"]}
+    "Direction": ["Up"],
+}
 
 # Image Layer (圖片圖層) - inherits from textLayer
-imageLayer = {"Name": "str",
+imageLayer = {
+    "Name": "str",
+    "Layer": (0, 5000, 1),
     "X": (-1280, 1280, 0),
     "Y": (-1280, 1280, 0),
     "Gyro effect": (1, 2048, 0),
@@ -121,15 +156,28 @@ imageLayer = {"Name": "str",
     "Skew Y": (0, 90, 0),
     "Opacity": (0, 100, 0),
     "Tint": "color",
-    "Alignment": ["Center","Top left","Top center","Top right","Center left","Center right","Bottom left","Bottom center","Bottom right"],
+    "Alignment": [
+        "Center",
+        "Top left",
+        "Top center",
+        "Top right",
+        "Center left",
+        "Center right",
+        "Bottom left",
+        "Bottom center",
+        "Bottom right",
+    ],
     "Display": ["Always"],
     "Shader": ["None"],
     "Tap action": ["None"],
     "Custom image": "file",
-    "Keep position if card displayed": "bool"}
+    "Keep position if card displayed": "bool",
+}
 
 # Tachymeter Layer (測速計圖層) - inherits from curvedTextLayer
-tachymeterLayer = {"Name": "str",
+tachymeterLayer = {
+    "Name": "str",
+    "Layer": (0, 5000, 1),
     "Text": "str",
     "X": (-1280, 1280, 0),
     "Y": (-1280, 1280, 0),
@@ -145,7 +193,17 @@ tachymeterLayer = {"Name": "str",
     "Skew X": (0, 90, 0),
     "Skew Y": (0, 90, 0),
     "Opacity": (0, 100, 0),
-    "Alignment": ["Center","Top left","Top center","Top right","Center left","Center right","Bottom left","Bottom center","Bottom right"],
+    "Alignment": [
+        "Center",
+        "Top left",
+        "Top center",
+        "Top right",
+        "Center left",
+        "Center right",
+        "Bottom left",
+        "Bottom center",
+        "Bottom right",
+    ],
     "Transform": ["None"],
     "Marker width": (1, 2048, 1),
     "Marker height": (1, 2048, 1),
@@ -157,10 +215,13 @@ tachymeterLayer = {"Name": "str",
     "Display": ["Always"],
     "Tap action": ["None"],
     "Text effect": ["None"],
-    "Keep position if card displayed": "bool"}
+    "Keep position if card displayed": "bool",
+}
 
 # Shape Layer (形狀圖層)
-shapeLayer = {"Name": "str",
+shapeLayer = {
+    "Name": "str",
+    "Layer": (0, 5000, 1),
     "Shape": ["square"],
     "X": (-1280, 1280, 0),
     "Y": (-1280, 1280, 0),
@@ -171,15 +232,28 @@ shapeLayer = {"Name": "str",
     "Skew X": (0, 90, 0),
     "Skew Y": (0, 90, 0),
     "Opacity": (0, 100, 0),
-    "Alignment": ["Center","Top left","Top center","Top right","Center left","Center right","Bottom left","Bottom center","Bottom right"],
+    "Alignment": [
+        "Center",
+        "Top left",
+        "Top center",
+        "Top right",
+        "Center left",
+        "Center right",
+        "Bottom left",
+        "Bottom center",
+        "Bottom right",
+    ],
     "Color": "color",
     "Display": ["Always"],
     "Shader": ["None"],
     "Tap action": ["None"],
-    "Shape effect": ["None"]}
+    "Shape effect": ["None"],
+}
 
 # Marker Layer (標記圖層) - inherits from tachymeterLayer
-markerLayer = {"Name": "str",
+markerLayer = {
+    "Name": "str",
+    "Layer": (0, 5000, 1),
     "Text": "str",
     "X": (-1280, 1280, 0),
     "Y": (-1280, 1280, 0),
@@ -195,7 +269,17 @@ markerLayer = {"Name": "str",
     "Skew X": (0, 90, 0),
     "Skew Y": (0, 90, 0),
     "Opacity": (0, 100, 0),
-    "Alignment": ["Center","Top left","Top center","Top right","Center left","Center right","Bottom left","Bottom center","Bottom right"],
+    "Alignment": [
+        "Center",
+        "Top left",
+        "Top center",
+        "Top right",
+        "Center left",
+        "Center right",
+        "Bottom left",
+        "Bottom center",
+        "Bottom right",
+    ],
     "Transform": ["None"],
     "Marker width": (1, 2048, 1),
     "Marker height": (1, 2048, 1),
@@ -203,10 +287,12 @@ markerLayer = {"Name": "str",
     "Squarify": (1, 2048, 1),
     "Display": ["Always"],
     "Tap action": ["None"],
-    "Text effect": ["None"]}
+    "Text effect": ["None"],
+}
 
 # Map Layer (地圖圖層) - inherits from imageLayer
-mapLayer = {"X": (-1280, 1280, 0),
+mapLayer = {
+    "X": (-1280, 1280, 0),
     "Y": (-1280, 1280, 0),
     "Gyro effect": (1, 2048, 0),
     "Width": (1, 2048, 0),
@@ -220,14 +306,26 @@ mapLayer = {"X": (-1280, 1280, 0),
     "Map zoom": (1, 2048, 0),
     "Map scale": (1, 2048, 0),
     "Tint": "color",
-    "Alignment": ["Center","Top left","Top center","Top right","Center left","Center right","Bottom left","Bottom center","Bottom right"],
+    "Alignment": [
+        "Center",
+        "Top left",
+        "Top center",
+        "Top right",
+        "Center left",
+        "Center right",
+        "Bottom left",
+        "Bottom center",
+        "Bottom right",
+    ],
     "Display": ["Always"],
     "Shader": ["None"],
     "Tap action": ["None"],
-    "Map effect": ["None"]}
+    "Map effect": ["None"],
+}
 
 # Slideshow Layer (幻燈片圖層) - inherits from imageLayer
-slideshowLayer = {"Photo": "file",
+slideshowLayer = {
+    "Photo": "file",
     "Photo duration": (1, 2048, 1),
     "Photo clip": ["corner1"],
     "X": (-1280, 1280, 0),
@@ -240,14 +338,27 @@ slideshowLayer = {"Photo": "file",
     "Skew Y": (0, 90, 0),
     "Opacity": (0, 100, 0),
     "Tint": "color",
-    "Alignment": ["Center","Top left","Top center","Top right","Center left","Center right","Bottom left","Bottom center","Bottom right"],
+    "Alignment": [
+        "Center",
+        "Top left",
+        "Top center",
+        "Top right",
+        "Center left",
+        "Center right",
+        "Bottom left",
+        "Bottom center",
+        "Bottom right",
+    ],
     "Display": ["Always"],
     "Shader": ["None"],
     "Tap action": ["None"],
-    "Keep position if card displayed": "bool"}
+    "Keep position if card displayed": "bool",
+}
 
 # Text Ring Layer (環形文字圖層) - inherits from textLayer
-textRingLayer = {"Name": "str",
+textRingLayer = {
+    "Name": "str",
+    "Layer": (0, 5000, 1),
     "X": (-1280, 1280, 0),
     "Y": (-1280, 1280, 0),
     "Gyro effect": (1, 2048, 0),
@@ -261,7 +372,17 @@ textRingLayer = {"Name": "str",
     "Skew X": (0, 90, 0),
     "Skew Y": (0, 90, 0),
     "Opacity": (0, 100, 0),
-    "Alignment": ["Center","Top left","Top center","Top right","Center left","Center right","Bottom left","Bottom center","Bottom right"],
+    "Alignment": [
+        "Center",
+        "Top left",
+        "Top center",
+        "Top right",
+        "Center left",
+        "Center right",
+        "Bottom left",
+        "Bottom center",
+        "Bottom right",
+    ],
     "Transform": ["None"],
     "Display": ["Always"],
     "Radius": (1, 2048, 0),
@@ -275,10 +396,12 @@ textRingLayer = {"Name": "str",
     "Shader": ["None"],
     "Tap action": ["None"],
     "Text effect": ["None"],
-    "Keep position if card displayed": "bool"}
+    "Keep position if card displayed": "bool",
+}
 
 # Rounded Rectangle Layer (圓角矩形圖層) - inherits from imageLayer
-roundedRectangleLayer = {"X": (-1280, 1280, 0),
+roundedRectangleLayer = {
+    "X": (-1280, 1280, 0),
     "Y": (-1280, 1280, 0),
     "Gyro effect": (1, 2048, 0),
     "Width": (1, 2048, 0),
@@ -289,16 +412,28 @@ roundedRectangleLayer = {"X": (-1280, 1280, 0),
     "Skew X": (0, 90, 0),
     "Skew Y": (0, 90, 0),
     "Opacity": (0, 100, 0),
-    "Alignment": ["Center","Top left","Top center","Top right","Center left","Center right","Bottom left","Bottom center","Bottom right"],
+    "Alignment": [
+        "Center",
+        "Top left",
+        "Top center",
+        "Top right",
+        "Center left",
+        "Center right",
+        "Bottom left",
+        "Bottom center",
+        "Bottom right",
+    ],
     "Color": "color",
     "Display": ["Always"],
     "Shader": ["None"],
     "Tap action": ["None"],
     "Shape effect": ["None"],
-    "Keep position if card displayed": "bool"}
+    "Keep position if card displayed": "bool",
+}
 
 # Series Layer (數據系列圖層) - inherits from textLayer
-seriesLayer = {"X": (-1280, 1280, 0),
+seriesLayer = {
+    "X": (-1280, 1280, 0),
     "Y": (-1280, 1280, 0),
     "Gyro effect": (1, 2048, 0),
     "Font": "font",
@@ -313,7 +448,17 @@ seriesLayer = {"X": (-1280, 1280, 0),
     "Skew X": (0, 90, 0),
     "Skew Y": (0, 90, 0),
     "Opacity": (0, 100, 0),
-    "Alignment": ["Center","Top left","Top center","Top right","Center left","Center right","Bottom left","Bottom center","Bottom right"],
+    "Alignment": [
+        "Center",
+        "Top left",
+        "Top center",
+        "Top right",
+        "Center left",
+        "Center right",
+        "Bottom left",
+        "Bottom center",
+        "Bottom right",
+    ],
     "Transform": ["None"],
     "Display": ["Always"],
     "Series type": ["Day of the week short"],
@@ -323,10 +468,12 @@ seriesLayer = {"X": (-1280, 1280, 0),
     "Shader": ["None"],
     "Tap action": ["None"],
     "Text effect": ["None"],
-    "Keep position if card displayed": "bool"}
+    "Keep position if card displayed": "bool",
+}
 
 # Complication Layer (複雜功能圖層) - inherits from textLayer
-complicationLayer = {"Color text": "color",
+complicationLayer = {
+    "Color text": "color",
     "Color background": "color",
     "X": (-1280, 1280, 0),
     "Y": (-1280, 1280, 0),
@@ -344,12 +491,24 @@ complicationLayer = {"Color text": "color",
     "Opacity": (0, 100, 0),
     "Width": (1, 2048, 0),
     "Height": (1, 2048, 0),
-    "Alignment": ["Center","Top left","Top center","Top right","Center left","Center right","Bottom left","Bottom center","Bottom right"],
+    "Alignment": [
+        "Center",
+        "Top left",
+        "Top center",
+        "Top right",
+        "Center left",
+        "Center right",
+        "Bottom left",
+        "Bottom center",
+        "Bottom right",
+    ],
     "Transform": ["None"],
-    "Display": ["Always"]}
+    "Display": ["Always"],
+}
 
 # Chart Layer (圖表圖層)
-chartLayer = {"X": (-1280, 1280, 0),
+chartLayer = {
+    "X": (-1280, 1280, 0),
     "Y": (-1280, 1280, 0),
     "Gyro effect": (1, 2048, 0),
     "Rotation": (-720, 720, 0),
@@ -378,10 +537,13 @@ chartLayer = {"X": (-1280, 1280, 0),
     "Labels": "str",
     "Anim scale X": (1, 2048, 0),
     "Anim scale Y": (1, 2048, 0),
-    "Display": ["Always"]}
+    "Display": ["Always"],
+}
 
 # Image Condition Layer (條件圖片圖層) - inherits from textLayer
-imageCondLayer = {"Name": "str",
+imageCondLayer = {
+    "Name": "str",
+    "Layer": (0, 5000, 1),
     "X": (-1280, 1280, 0),
     "Y": (-1280, 1280, 0),
     "Gyro effect": (1, 2048, 0),
@@ -392,7 +554,17 @@ imageCondLayer = {"Name": "str",
     "Skew Y": (0, 90, 0),
     "Opacity": (0, 100, 0),
     "Tint": "color",
-    "Alignment": ["Center","Top left","Top center","Top right","Center left","Center right","Bottom left","Bottom center","Bottom right"],
+    "Alignment": [
+        "Center",
+        "Top left",
+        "Top center",
+        "Top right",
+        "Center left",
+        "Center right",
+        "Bottom left",
+        "Bottom center",
+        "Bottom right",
+    ],
     "Display": ["Always"],
     "Shader": ["None"],
     "Image selection": (1, 2048, 0),
@@ -400,25 +572,39 @@ imageCondLayer = {"Name": "str",
     "Tap action": ["None"],
     "Custom image": "file",
     "Weather includes night symbols": "bool",
-    "Keep position if card displayed": "bool"}
+    "Keep position if card displayed": "bool",
+}
 
 # Image GIF Layer (GIF圖片圖層)
-imageGifLayer = {"X": (-1280, 1280, 0),
+imageGifLayer = {
+    "X": (-1280, 1280, 0),
     "Y": (-1280, 1280, 0),
     "Gyro effect": (1, 2048, 0),
     "Rotation": (-720, 720, 0),
     "Skew X": (0, 90, 0),
     "Skew Y": (0, 90, 0),
     "Opacity": (0, 100, 0),
-    "Alignment": ["Center","Top left","Top center","Top right","Center left","Center right","Bottom left","Bottom center","Bottom right"],
+    "Alignment": [
+        "Center",
+        "Top left",
+        "Top center",
+        "Top right",
+        "Center left",
+        "Center right",
+        "Bottom left",
+        "Bottom center",
+        "Bottom right",
+    ],
     "Path": "str",
     "Width": (1, 2048, 0),
     "Height": (1, 2048, 0),
     "Gif delay": (1, 2048, 0),
-    "Display": ["Always"]}
+    "Display": ["Always"],
+}
 
 # Progress Layer (進度條圖層)
-progressLayer = {"X": (-1280, 1280, 0),
+progressLayer = {
+    "X": (-1280, 1280, 0),
     "Y": (-1280, 1280, 0),
     "Gyro effect": (1, 2048, 0),
     "Rotation": (-720, 720, 0),
@@ -440,10 +626,12 @@ progressLayer = {"X": (-1280, 1280, 0),
     "Corner type": (1, 2048, 1),
     "Anim scale X": (1, 2048, 0),
     "Anim scale Y": (1, 2048, 0),
-    "Display": ["Always"]}
+    "Display": ["Always"],
+}
 
 # Ring Layer (圓環圖層)
-ringLayer = {"X": (-1280, 1280, 0),
+ringLayer = {
+    "X": (-1280, 1280, 0),
     "Y": (-1280, 1280, 0),
     "Gyro effect": (1, 2048, 0),
     "Rotation": (-720, 720, 0),
@@ -462,10 +650,12 @@ ringLayer = {"X": (-1280, 1280, 0),
     "Outside opacity": (0, 100, 0),
     "Anim scale X": (1, 2048, 0),
     "Anim scale Y": (1, 2048, 0),
-    "Display": ["Always"]}
+    "Display": ["Always"],
+}
 
 # Markers HM Layer (時分標記圖層) - inherits from markerLayer
-markersHMLayer = {"X": (-1280, 1280, 0),
+markersHMLayer = {
+    "X": (-1280, 1280, 0),
     "Y": (-1280, 1280, 0),
     "Gyro effect": (1, 2048, 0),
     "Rotation": (-720, 720, 0),
@@ -480,7 +670,8 @@ markersHMLayer = {"X": (-1280, 1280, 0),
     "Hour color": "color",
     "Minute color": "color",
     "Squarify": (1, 2048, 1),
-    "Display": ["Always"]}
+    "Display": ["Always"],
+}
 
 # Export all Layer definitions
 __all__ = [
@@ -505,5 +696,5 @@ __all__ = [
     "imageGifLayer",
     "progressLayer",
     "ringLayer",
-    "markersHMLayer"
+    "markersHMLayer",
 ]
