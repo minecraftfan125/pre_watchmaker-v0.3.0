@@ -101,7 +101,6 @@ def Dragable(cls):
             original_mousePress(self, event)
         self.draged = False
         original_mouseRelease(self, event)
-        print("succ")
 
     cls.mousePressEvent = mousePressEvent
     cls.mouseMoveEvent = mouseMoveEvent
@@ -266,34 +265,44 @@ class DragVisual(QLabel):
         else:
             self.setGeometry(target)
 
-
+class ItemSignals(QObject):
+    name_collision = pyqtSignal(str)
+    level_change = pyqtSignal(object, int)
 @Dragable
 class ExplororItem(QTreeWidgetItem):
-    def __init__(self, layer_type, att_signal_dict, hash_id, parent):
+    def __init__(self, layer_type, att_signal_dict, parent):
         if layer_type == "group":
             super().__init__(1001)
         else:
             super().__init__(1000)
         self.layer_type = layer_type
         self._parent = parent
-        self.att_signal_dict = att_signal_dict
-        self.setText(1, re.sub(r"Layer$", "", self.layer_type))
-        self.att_signal_dict["Name"].connect(self.passive_rename)
-        self.att_signal_dict["Layer"].connect(self.change_z_order)
         self.level = 0
-
-    def passive_rename(self, name):
+        self.name=None
+        self.stablize_name=""
+        self.signals=ItemSignals()
+        self.name_signal=att_signal_dict["Name"]
+        self.level_signal=att_signal_dict["Layer"]
+        self.setText(1, re.sub(r"Layer$", "", self.layer_type))
+        self.level_signal.connect(self.change_z_order)
+        
+    def rename(self, name):
         self.setText(0, name)
+        self.name_detection(name)
+
+    def name_detection(self,name):
+        if self.name is not None and name==self.name[1:]:
+            return
         self.name = "$"+name
+        self.name_signal.emit(name)
+        self.signals.name_collision.emit(name)
 
     def change_z_order(self,value):
         if value==self.level:
             return
+        print("in")
         self.level=value
-        self.att_signal_dict["Layer"].emit(value)
-
-    def update_level(self, level):
-        self.level = level
+        self.level_signal.emit(value)
 
     def __lt__(self, other):
         condition = getattr(self._parent, "sort_basis", "layer")
@@ -303,8 +312,7 @@ class ExplororItem(QTreeWidgetItem):
             return self.name < other.name
         if condition == "type":
             return self.layer_type < other.layer_type
-        return
-
+        return self.name < other.name
 
 class ExplororTree(QTreeWidget):
     def __init__(self, parent=None):
@@ -320,8 +328,29 @@ class ExplororTree(QTreeWidget):
         header.setStretchLastSection(True)
         self.setColumnWidth(0,140)
         self.setColumnWidth(1,70)
-        self.verticalScrollBar().valueChanged.connect(self.on_v_scroll)
-        self.view_last_item=None
+        self.reference_item=None
+        self.setSortingEnabled(True)
+        self.item_level={}
+        self.item_name=[]
+
+    def add_item(self, item:ExplororItem):
+        self.setCurrentItem(item)
+        self.addTopLevelItem(item)
+        item.signals.name_collision.connect(lambda name:self.set_name(item,name))
+        item.name_signal.connect(item.rename)
+
+    def set_name(self,item,value):
+        if value in self.item_name:
+            base_name = re.sub(r" \d$", "", value)
+            counter=1
+            new_name=base_name
+            while new_name in self.item_name:
+                new_name=base_name+" "+str(counter)
+                counter+=1
+            item.rename(new_name)
+            return
+        self.item_name.append(value)    
+        item.rename(value)
 
     def mouseMoveEvent(self, event):
         super().mouseMoveEvent(event)
@@ -343,35 +372,54 @@ class ExplororTree(QTreeWidget):
             self.currentItem().mouseReleaseEvent(event)
         except AttributeError:
             pass
+
+    def get_absolute_last_item(self):
+        count = self.topLevelItemCount()
+        if count == 0:
+            return None
         
-    def on_v_scroll(self,_):
-        self.view_last_item=None
+        last_item = self.topLevelItem(count - 1)
+        # 如果最後一個頂層節點展開了，就要找它的最後一個子節點
+        while last_item.isExpanded() and last_item.childCount() > 0:
+            last_item = last_item.child(last_item.childCount() - 1)
+        return last_item
 
     def required_visual_effects(self, pos):
         item=self.itemAt(pos)
+
         if item is None:
             if pos.y()<0:
                 return self.required_visual_effects(QPoint(1,1))
-            for y in range(self.viewport().rect().height(),0,-10):
-                if  self.view_last_item is not None:
-                    item=self.view_last_item
-                    break
-                item=self.itemAt(1,y)
-                if item is not None:
-                    self.view_last_item=item
-                    break
+            item=self.itemAt(QPoint(1,self.viewport().rect().height()-1))
+            if item is None:
+                item=self.get_absolute_last_item()
+
         offset=self.viewport().pos()+self.header().rect().bottomLeft()+QPoint(8,0)
+        self.reference_item=item if item else None
+
         if item is None:
             rect=self.viewport().rect()
             return rect.topLeft()+offset,QSize(rect.width(),5)
         rect=self.visualItemRect(item)
+
         if item.type()==1000:
             if item is self.itemAt(1,pos.y()+self.visualItemRect(item).height()//2):
                 return QPoint(rect.center().x(),rect.top())+offset,QSize(rect.width(),5)
             else:
                 return QPoint(rect.center().x(),rect.bottom())+offset,QSize(rect.width(),5)
         return rect.center()+offset,rect.size()
-
+    
+    def drop(self,item):
+        print(item.name,self.reference_item.name)
+        if item is self.reference_item:
+            return
+        if self.reference_item.type()==1001:
+            self.reference_item.addChild(item)
+        else:
+            tmp=self.reference_item.level
+            self.reference_item.change_z_order(item.level)
+            item.change_z_order(tmp)
+        self.sortItems(0,Qt.AscendingOrder)
 
 class Exploror(QWidget):
     receive = pyqtSignal(str, dict, int)
@@ -394,7 +442,9 @@ class Exploror(QWidget):
         sort_label.setObjectName("explorerSortLabel")
         self.sort_option = QComboBox()
         self.sort_option.setObjectName("explorerCombo")
-        self.sort_option.addItems(["level", "name", "layer"])
+        self.sort_option.addItems(["layer", "name", "type"])
+        self.sort_basis="layer"
+        self.sort_option.currentTextChanged.connect
         hlayout.addWidget(sort_label, 2)
         hlayout.addWidget(self.sort_option, 3)
         self._vlayout.addLayout(hlayout, 1)
@@ -407,13 +457,16 @@ class Exploror(QWidget):
         self.send_all = signal
         self.receive.connect(self.add_item)
         self.items = {}
+        
         self.id_stack = id_stack
 
+    def sort_change(self,text):
+        self.sort_basis=text
+
     def add_item(self, layer_type, signal_dict, hash_id):
-        new = ExplororItem(layer_type, signal_dict, hash_id, self)
+        new = ExplororItem(layer_type, signal_dict, self)
+        self.tree.add_item(new)
         self.items[new.name] = (hash_id,new)
-        self.tree.setCurrentItem(new)
-        self.tree.addTopLevelItem(new)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -443,9 +496,9 @@ class Exploror(QWidget):
                 hash_id=int(text)
             except ValueError:
                 if text.startswith("$"):
-
+                    self.tree.drop(self.items[text][1])
                 else:
-
+                    pass
         self.override.hide()
 
     def required_visual_effects(self, event):
@@ -683,6 +736,7 @@ class AttributeForm(QScrollArea):
                 self._create_str_ui()
 
             self.right.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            self.signal.connect(self.set_value)
             if len(self.name) <= 8:
                 self.left.setFixedWidth(80)
                 self.row_layout = QHBoxLayout(self)
@@ -696,7 +750,7 @@ class AttributeForm(QScrollArea):
             self.row_layout.setSpacing(8)
             self.row_layout.addWidget(self.left)
             self.row_layout.addWidget(self.right, 1)
-            self.signal.connect(self.set_value)
+            
 
         def _create_str_ui(self):
             if self.name in ["Text", "Script"]:
@@ -706,6 +760,7 @@ class AttributeForm(QScrollArea):
             self.right.setObjectName("attrInput")
             self.right.textChanged.connect(self._on_text_changed)
             if self.name == "Name":
+                print(self.signal)
                 self.right.editingFinished.connect(
                     lambda: self.value_processing(self.right.text())
                 )
@@ -938,7 +993,10 @@ class AttributeForm(QScrollArea):
                 except:
                     pass
             elif isinstance(self.attr_type, tuple):
-                self.input.setText(str(value))
+                try:
+                    self.input.setText(str(value))
+                except AttributeError:
+                    self.right.setText(str(value))
             elif self.attr_type == "widget":
                 self._value = None
             elif self.attr_type == "bool":
@@ -1018,41 +1076,6 @@ class AttributeForm(QScrollArea):
         self._containers[title] = container
         if title != "Display":
             self._vlayout.addWidget(container)
-
-        if title == "Name":
-            # 【關鍵修改 1】初始化時先預設為 None，並主動呼叫一次改名驗證，確保拖入新元件時名稱就不會重複
-            container.last_valid_name = None
-            self.rename_valid(value, container, signal)
-
-            # 綁定使用者修改名稱的信號
-            signal.connect(lambda text: self.rename_valid(text, container, signal))
-
-    def rename_valid(self, new_name, container, signal):
-        old_name = getattr(container, "last_valid_name", None)
-
-        if old_name == new_name:
-            return
-
-        if old_name and old_name in self.name_distrbute:
-            del self.name_distrbute[old_name]
-
-        final_name = new_name
-        base_name = re.sub(r" \d$", "", new_name)
-        counter = (
-            self.name_distrbute[final_name] if final_name in self.name_distrbute else 1
-        )
-
-        while final_name in self.name_distrbute:
-            final_name = f"{base_name} {counter}"
-            counter += 1
-
-        self.name_distrbute[final_name] = counter
-        container.last_valid_name = final_name
-
-        if final_name != new_name:
-            self.blockSignals(True)
-            signal.emit(final_name)
-            self.blockSignals(False)
 
     def pack(self):
         values = []
