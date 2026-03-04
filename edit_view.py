@@ -1428,5 +1428,6 @@ class EditView(QWidget):
 
 
 # TODO:
-# 檔案總管排序
-# 檔案總管圖層管理
+#Exploror item改名時產生的bug
+#復原重作按鈕及框架
+#container輸入邏輯修改
