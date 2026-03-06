@@ -58,57 +58,60 @@ def load_style():
         return ""
 
 
-def Dragable(cls):
-    def do_nothing(*args, **kwargs):
-        pass
+def Dragable(emitdata:str):
+    def change_method(cls):
+        def do_nothing(*args, **kwargs):
+            pass
 
-    original_mousePress = getattr(cls, "mousePressEvent", do_nothing)
-    original_mouseMove = getattr(cls, "mouseMoveEvent", do_nothing)
-    original_mouseRelease = getattr(cls, "mouseReleaseEvent", do_nothing)
-
-    cls.drag_start_position = None
-    cls.draged = False
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            self.drag_start_position = event.pos()
-
-    def mouseMoveEvent(self, event):
-        original_mouseMove(self, event)
-        if not (event.buttons() & Qt.LeftButton):
-            return
-        if self.drag_start_position is None:
-            return
-        # 检查移动距离是否超过启动拖拽的阈值
-        if (event.pos() - self.drag_start_position).manhattanLength() < 5:
-            return
-        # 创建拖拽对象
-        tmp = QWidget()
-        drag = QDrag(tmp)
-        mime_data = QMimeData()
-        # 存储组件信息（tooltip）
-        mime_data.setText(self.name)
-        drag.setMimeData(mime_data)
-        # 执行拖拽
-        drag.exec_(Qt.CopyAction)
-        # 重置拖拽起始位置
-        self.drag_start_position = None
-        self.draged = True
-        self.mouseReleaseEvent(event)
-
-    def mouseReleaseEvent(self, event):
-        if self.draged is False:
-            original_mousePress(self, event)
-        self.draged = False
-        original_mouseRelease(self, event)
-
-    cls.mousePressEvent = mousePressEvent
-    cls.mouseMoveEvent = mouseMoveEvent
-    cls.mouseReleaseEvent = mouseReleaseEvent
-    return cls
+        original_mousePress = getattr(cls, "mousePressEvent", do_nothing)
+        original_mouseMove = getattr(cls, "mouseMoveEvent", do_nothing)
+        original_mouseRelease = getattr(cls, "mouseReleaseEvent", do_nothing)
 
 
-@Dragable
+        cls.drag_start_position = None
+        cls.draged = False
+
+        def mousePressEvent(self, event):
+            if event.button() == Qt.LeftButton:
+                self.drag_start_position = event.pos()
+
+        def mouseMoveEvent(self, event):
+            original_mouseMove(self, event)
+            if not (event.buttons() & Qt.LeftButton):
+                return
+            if self.drag_start_position is None:
+                return
+            # 检查移动距离是否超过启动拖拽的阈值
+            if (event.pos() - self.drag_start_position).manhattanLength() < 5:
+                return
+            # 创建拖拽对象
+            tmp = QWidget()
+            drag = QDrag(tmp)
+            mime_data = QMimeData()
+            # 存储组件信息（tooltip）
+            mime_data.setText(getattr(self,emitdata))
+            drag.setMimeData(mime_data)
+            # 执行拖拽
+            drag.exec_(Qt.CopyAction)
+            # 重置拖拽起始位置
+            self.drag_start_position = None
+            self.draged = True
+            self.mouseReleaseEvent(event)
+
+        def mouseReleaseEvent(self, event):
+            if self.draged is False:
+                original_mousePress(self, event)
+            self.draged = False
+            original_mouseRelease(self, event)
+
+        cls.mousePressEvent = mousePressEvent
+        cls.mouseMoveEvent = mouseMoveEvent
+        cls.mouseReleaseEvent = mouseReleaseEvent
+        return cls
+    return change_method
+
+
+@Dragable("name")
 class ComponentButton(QPushButton):
     """組件按鈕類，支持拖拽"""
 
@@ -266,11 +269,11 @@ class DragVisual(QLabel):
             self.setGeometry(target)
 
 class ItemSignals(QObject):
-    name_collision = pyqtSignal(str)
+    name_collision = pyqtSignal(str,str)
     level_change = pyqtSignal(object, int)
-@Dragable
+@Dragable("id")
 class ExplororItem(QTreeWidgetItem):
-    def __init__(self, layer_type, att_signal_dict, parent):
+    def __init__(self, layer_type, att_signal_dict,id, parent):
         if layer_type == "group":
             super().__init__(1001)
         else:
@@ -280,27 +283,26 @@ class ExplororItem(QTreeWidgetItem):
         self.level = 0
         self.name=None
         self.stablize_name=""
+        self.id=str(id)
         self.signals=ItemSignals()
         self.name_signal=att_signal_dict["Name"]
         self.level_signal=att_signal_dict["Layer"]
         self.setText(1, re.sub(r"Layer$", "", self.layer_type))
         self.level_signal.connect(self.change_z_order)
         
-    def rename(self, name):
-        self.setText(0, name)
-        self.name_detection(name)
-
-    def name_detection(self,name):
-        if self.name is not None and name==self.name[1:]:
+    def rename(self, name,collision=True):
+        if self.name is not None and name==self.name:
             return
-        self.name = "$"+name
-        self.name_signal.emit(name)
-        self.signals.name_collision.emit(name)
+        self.setText(0, name)
+        if collision:
+            self.signals.name_collision.emit(name,self.name)
+        else:
+            self.name = name
+            self.name_signal.emit(name)
 
     def change_z_order(self,value):
         if value==self.level:
             return
-        print("in")
         self.level=value
         self.level_signal.emit(value)
 
@@ -336,10 +338,14 @@ class ExplororTree(QTreeWidget):
     def add_item(self, item:ExplororItem):
         self.setCurrentItem(item)
         self.addTopLevelItem(item)
-        item.signals.name_collision.connect(lambda name:self.set_name(item,name))
+        item.signals.name_collision.connect(lambda name,del_name:self.set_name(item,name,del_name))
         item.name_signal.connect(item.rename)
 
-    def set_name(self,item,value):
+    def set_name(self,item,value,del_name):
+        print(self.item_name)
+        if del_name in self.item_name:
+            self.item_name.remove(del_name)
+        print(self.item_name)
         if value in self.item_name:
             base_name = re.sub(r" \d$", "", value)
             counter=1
@@ -347,10 +353,12 @@ class ExplororTree(QTreeWidget):
             while new_name in self.item_name:
                 new_name=base_name+" "+str(counter)
                 counter+=1
-            item.rename(new_name)
+            self.item_name.append(new_name)    
+            item.rename(new_name,False)
             return
-        self.item_name.append(value)    
-        item.rename(value)
+        self.item_name.append(value)
+        item.rename(value,False)
+        print(self.item_name)
 
     def mouseMoveEvent(self, event):
         super().mouseMoveEvent(event)
@@ -444,7 +452,7 @@ class Exploror(QWidget):
         self.sort_option.setObjectName("explorerCombo")
         self.sort_option.addItems(["layer", "name", "type"])
         self.sort_basis="layer"
-        self.sort_option.currentTextChanged.connect
+        self.sort_option.currentTextChanged.connect(self.sort_change)
         hlayout.addWidget(sort_label, 2)
         hlayout.addWidget(self.sort_option, 3)
         self._vlayout.addLayout(hlayout, 1)
@@ -462,11 +470,12 @@ class Exploror(QWidget):
 
     def sort_change(self,text):
         self.sort_basis=text
+        self.tree.sortItems(0,Qt.AscendingOrder)
 
     def add_item(self, layer_type, signal_dict, hash_id):
-        new = ExplororItem(layer_type, signal_dict, self)
+        new = ExplororItem(layer_type, signal_dict,hash_id, self)
         self.tree.add_item(new)
-        self.items[new.name] = (hash_id,new)
+        self.items[str(hash_id)] = new
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -493,12 +502,9 @@ class Exploror(QWidget):
         if event.mimeData().hasText():
             text=event.mimeData().text()
             try:
-                hash_id=int(text)
+                self.tree.drop(self.items[text])
             except ValueError:
-                if text.startswith("$"):
-                    self.tree.drop(self.items[text][1])
-                else:
-                    pass
+                pass
         self.override.hide()
 
     def required_visual_effects(self, event):
@@ -1428,6 +1434,5 @@ class EditView(QWidget):
 
 
 # TODO:
-#Exploror item改名時產生的bug
 #復原重作按鈕及框架
 #container輸入邏輯修改
