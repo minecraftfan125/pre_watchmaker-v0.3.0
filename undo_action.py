@@ -25,9 +25,11 @@ class UndoGroupStack(StackWidget):
         self.undo_group.activeStack().push(command)
 
     def redo(self):
+        print("redo")
         self.undo_group.activeStack().redo()
 
     def undo(self):
+        print("undo")
         self.undo_group.activeStack().undo()
 
 class AddComponentButton(QUndoCommand):

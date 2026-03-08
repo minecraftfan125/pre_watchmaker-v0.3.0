@@ -39,7 +39,18 @@ from PyQt5.QtCore import (
     QEasingCurve,
     QObject,
 )
-from PyQt5.QtGui import QPixmap, QIcon, QDrag, QCursor, QColor, QPainter, QPen, QBrush
+from PyQt5.QtGui import (
+    QPixmap,
+    QIcon,
+    QDrag,
+    QCursor,
+    QColor,
+    QPainter,
+    QPen,
+    QBrush,
+    QKeySequence,
+)
+from PyQt5.QtWidgets import QShortcut
 from script_view import ScriptView
 from common import FlowLayout, StackWidget, FontManager
 import components
@@ -58,7 +69,7 @@ def load_style():
         return ""
 
 
-def Dragable(emitdata:str):
+def Dragable(emitdata: str):
     def change_method(cls):
         def do_nothing(*args, **kwargs):
             pass
@@ -66,7 +77,6 @@ def Dragable(emitdata:str):
         original_mousePress = getattr(cls, "mousePressEvent", do_nothing)
         original_mouseMove = getattr(cls, "mouseMoveEvent", do_nothing)
         original_mouseRelease = getattr(cls, "mouseReleaseEvent", do_nothing)
-
 
         cls.drag_start_position = None
         cls.draged = False
@@ -89,7 +99,7 @@ def Dragable(emitdata:str):
             drag = QDrag(tmp)
             mime_data = QMimeData()
             # 存储组件信息（tooltip）
-            mime_data.setText(getattr(self,emitdata))
+            mime_data.setText(getattr(self, emitdata))
             drag.setMimeData(mime_data)
             # 执行拖拽
             drag.exec_(Qt.CopyAction)
@@ -108,6 +118,7 @@ def Dragable(emitdata:str):
         cls.mouseMoveEvent = mouseMoveEvent
         cls.mouseReleaseEvent = mouseReleaseEvent
         return cls
+
     return change_method
 
 
@@ -268,12 +279,15 @@ class DragVisual(QLabel):
         else:
             self.setGeometry(target)
 
+
 class ItemSignals(QObject):
-    name_collision = pyqtSignal(str,str)
+    name_collision = pyqtSignal(str, str)
     level_change = pyqtSignal(object, int)
+
+
 @Dragable("id")
 class ExplororItem(QTreeWidgetItem):
-    def __init__(self, layer_type, att_signal_dict,id, parent):
+    def __init__(self, layer_type, att_signal_dict, id, parent):
         if layer_type == "group":
             super().__init__(1001)
         else:
@@ -281,29 +295,29 @@ class ExplororItem(QTreeWidgetItem):
         self.layer_type = layer_type
         self._parent = parent
         self.level = 0
-        self.name=None
-        self.stablize_name=""
-        self.id=str(id)
-        self.signals=ItemSignals()
-        self.name_signal=att_signal_dict["Name"]
-        self.level_signal=att_signal_dict["Layer"]
+        self.name = None
+        self.stablize_name = ""
+        self.id = str(id)
+        self.signals = ItemSignals()
+        self.name_signal = att_signal_dict["Name"]
+        self.level_signal = att_signal_dict["Layer"]
         self.setText(1, re.sub(r"Layer$", "", self.layer_type))
         self.level_signal.connect(self.change_z_order)
-        
-    def rename(self, name,collision=True):
-        if self.name is not None and name==self.name:
+
+    def rename(self, name, collision=True):
+        if self.name is not None and name == self.name:
             return
         self.setText(0, name)
         if collision:
-            self.signals.name_collision.emit(name,self.name)
+            self.signals.name_collision.emit(name, self.name)
         else:
             self.name = name
             self.name_signal.emit(name)
 
-    def change_z_order(self,value):
-        if value==self.level:
+    def change_z_order(self, value):
+        if value == self.level:
             return
-        self.level=value
+        self.level = value
         self.level_signal.emit(value)
 
     def __lt__(self, other):
@@ -315,6 +329,7 @@ class ExplororItem(QTreeWidgetItem):
         if condition == "type":
             return self.layer_type < other.layer_type
         return self.name < other.name
+
 
 class ExplororTree(QTreeWidget):
     def __init__(self, parent=None):
@@ -328,36 +343,38 @@ class ExplororTree(QTreeWidget):
         self.setIndentation(0)
         header = self.header()
         header.setStretchLastSection(True)
-        self.setColumnWidth(0,140)
-        self.setColumnWidth(1,70)
-        self.reference_item=None
+        self.setColumnWidth(0, 140)
+        self.setColumnWidth(1, 70)
+        self.reference_item = None
         self.setSortingEnabled(True)
-        self.item_level={}
-        self.item_name=[]
+        self.item_level = {}
+        self.item_name = []
 
-    def add_item(self, item:ExplororItem):
+    def add_item(self, item: ExplororItem):
         self.setCurrentItem(item)
         self.addTopLevelItem(item)
-        item.signals.name_collision.connect(lambda name,del_name:self.set_name(item,name,del_name))
+        item.signals.name_collision.connect(
+            lambda name, del_name: self.set_name(item, name, del_name)
+        )
         item.name_signal.connect(item.rename)
 
-    def set_name(self,item,value,del_name):
+    def set_name(self, item, value, del_name):
         print(self.item_name)
         if del_name in self.item_name:
             self.item_name.remove(del_name)
         print(self.item_name)
         if value in self.item_name:
             base_name = re.sub(r" \d$", "", value)
-            counter=1
-            new_name=base_name
+            counter = 1
+            new_name = base_name
             while new_name in self.item_name:
-                new_name=base_name+" "+str(counter)
-                counter+=1
-            self.item_name.append(new_name)    
-            item.rename(new_name,False)
+                new_name = base_name + " " + str(counter)
+                counter += 1
+            self.item_name.append(new_name)
+            item.rename(new_name, False)
             return
         self.item_name.append(value)
-        item.rename(value,False)
+        item.rename(value, False)
         print(self.item_name)
 
     def mouseMoveEvent(self, event):
@@ -385,7 +402,7 @@ class ExplororTree(QTreeWidget):
         count = self.topLevelItemCount()
         if count == 0:
             return None
-        
+
         last_item = self.topLevelItem(count - 1)
         # 如果最後一個頂層節點展開了，就要找它的最後一個子節點
         while last_item.isExpanded() and last_item.childCount() > 0:
@@ -393,41 +410,50 @@ class ExplororTree(QTreeWidget):
         return last_item
 
     def required_visual_effects(self, pos):
-        item=self.itemAt(pos)
+        item = self.itemAt(pos)
 
         if item is None:
-            if pos.y()<0:
-                return self.required_visual_effects(QPoint(1,1))
-            item=self.itemAt(QPoint(1,self.viewport().rect().height()-1))
+            if pos.y() < 0:
+                return self.required_visual_effects(QPoint(1, 1))
+            item = self.itemAt(QPoint(1, self.viewport().rect().height() - 1))
             if item is None:
-                item=self.get_absolute_last_item()
+                item = self.get_absolute_last_item()
 
-        offset=self.viewport().pos()+self.header().rect().bottomLeft()+QPoint(8,0)
-        self.reference_item=item if item else None
+        offset = (
+            self.viewport().pos() + self.header().rect().bottomLeft() + QPoint(8, 0)
+        )
+        self.reference_item = item if item else None
 
         if item is None:
-            rect=self.viewport().rect()
-            return rect.topLeft()+offset,QSize(rect.width(),5)
-        rect=self.visualItemRect(item)
+            rect = self.viewport().rect()
+            return rect.topLeft() + offset, QSize(rect.width(), 5)
+        rect = self.visualItemRect(item)
 
-        if item.type()==1000:
-            if item is self.itemAt(1,pos.y()+self.visualItemRect(item).height()//2):
-                return QPoint(rect.center().x(),rect.top())+offset,QSize(rect.width(),5)
+        if item.type() == 1000:
+            if item is self.itemAt(
+                1, pos.y() + self.visualItemRect(item).height() // 2
+            ):
+                return QPoint(rect.center().x(), rect.top()) + offset, QSize(
+                    rect.width(), 5
+                )
             else:
-                return QPoint(rect.center().x(),rect.bottom())+offset,QSize(rect.width(),5)
-        return rect.center()+offset,rect.size()
-    
-    def drop(self,item):
-        print(item.name,self.reference_item.name)
+                return QPoint(rect.center().x(), rect.bottom()) + offset, QSize(
+                    rect.width(), 5
+                )
+        return rect.center() + offset, rect.size()
+
+    def drop(self, item):
+        print(item.name, self.reference_item.name)
         if item is self.reference_item:
             return
-        if self.reference_item.type()==1001:
+        if self.reference_item.type() == 1001:
             self.reference_item.addChild(item)
         else:
-            tmp=self.reference_item.level
+            tmp = self.reference_item.level
             self.reference_item.change_z_order(item.level)
             item.change_z_order(tmp)
-        self.sortItems(0,Qt.AscendingOrder)
+        self.sortItems(0, Qt.AscendingOrder)
+
 
 class Exploror(QWidget):
     receive = pyqtSignal(str, dict, int)
@@ -451,7 +477,7 @@ class Exploror(QWidget):
         self.sort_option = QComboBox()
         self.sort_option.setObjectName("explorerCombo")
         self.sort_option.addItems(["layer", "name", "type"])
-        self.sort_basis="layer"
+        self.sort_basis = "layer"
         self.sort_option.currentTextChanged.connect(self.sort_change)
         hlayout.addWidget(sort_label, 2)
         hlayout.addWidget(self.sort_option, 3)
@@ -465,15 +491,15 @@ class Exploror(QWidget):
         self.send_all = signal
         self.receive.connect(self.add_item)
         self.items = {}
-        
+
         self.id_stack = id_stack
 
-    def sort_change(self,text):
-        self.sort_basis=text
-        self.tree.sortItems(0,Qt.AscendingOrder)
+    def sort_change(self, text):
+        self.sort_basis = text
+        self.tree.sortItems(0, Qt.AscendingOrder)
 
     def add_item(self, layer_type, signal_dict, hash_id):
-        new = ExplororItem(layer_type, signal_dict,hash_id, self)
+        new = ExplororItem(layer_type, signal_dict, hash_id, self)
         self.tree.add_item(new)
         self.items[str(hash_id)] = new
 
@@ -500,7 +526,7 @@ class Exploror(QWidget):
 
     def dropEvent(self, event):
         if event.mimeData().hasText():
-            text=event.mimeData().text()
+            text = event.mimeData().text()
             try:
                 self.tree.drop(self.items[text])
             except ValueError:
@@ -508,10 +534,10 @@ class Exploror(QWidget):
         self.override.hide()
 
     def required_visual_effects(self, event):
-        pos=self.mapToGlobal(event.pos())
-        pos=self.tree.viewport().mapFromGlobal(pos)
-        pos,size=self.tree.required_visual_effects(pos)
-        return pos,size
+        pos = self.mapToGlobal(event.pos())
+        pos = self.tree.viewport().mapFromGlobal(pos)
+        pos, size = self.tree.required_visual_effects(pos)
+        return pos, size
 
 
 class WatchPreview(QGraphicsView):
@@ -524,8 +550,10 @@ class WatchPreview(QGraphicsView):
 
     def __init__(self, undo_stack=None, id_stack=None, parent=None):
         super().__init__(parent)
+        self.undo_stack = undo_stack
         self.scale = []
-        self.hash_table = {}
+        self.hash_table={}
+        self.id_stack = id_stack
         self.sence = QGraphicsScene()
         # 設定固定的場景範圍
         self.sence.setSceneRect(
@@ -550,6 +578,54 @@ class WatchPreview(QGraphicsView):
             "drop here\nadd new item", "img/edit/view_drag.png", self
         )
         self._create_background_circle()
+        self._create_undo_redo_buttons()
+        self._setup_shortcuts()
+
+    def _create_undo_redo_buttons(self):
+        base_path = "img/edit"
+
+        self.btn_undo = QPushButton(self)
+        self.btn_undo.mouseMoveEvent=lambda event:event.ignore()
+        self.btn_undo.setIcon(QIcon(QPixmap(f"{base_path}/undo-alt.png")))
+        self.btn_undo.setIconSize(QSize(24, 24))
+        self.btn_undo.setFixedSize(28, 28)
+        self.btn_undo.setStyleSheet(
+            "QPushButton { border: none; background: transparent; }"
+        )
+        self.btn_undo.setToolTip("Undo (Ctrl+Z)")
+        self.btn_undo.clicked.connect(self.undo_action)
+        self.btn_undo.move(10, 10)
+        self.btn_undo.show()
+
+        self.btn_redo = QPushButton(self)
+        self.btn_redo.mouseMoveEvent=lambda event:event.ignore()
+        self.btn_redo.setIcon(QIcon(QPixmap(f"{base_path}/redo-alt.png")))
+        self.btn_redo.setIconSize(QSize(24, 24))
+        self.btn_redo.setFixedSize(28, 28)
+        self.btn_redo.setStyleSheet(
+            "QPushButton { border: none; background: transparent; }"
+        )
+        self.btn_redo.setToolTip("Redo (Ctrl+Y)")
+        self.btn_redo.clicked.connect(self.redo_action)
+        self.btn_redo.move(44, 10)
+        self.btn_redo.show()
+        self.btn_redo.installEventFilter(self)
+        self.btn_undo.installEventFilter(self)
+
+    def _setup_shortcuts(self):
+        self.shortcut_undo = QShortcut(QKeySequence.Undo, self)
+        self.shortcut_undo.activated.connect(self.undo_action)
+
+        self.shortcut_redo = QShortcut(QKeySequence.Redo, self)
+        self.shortcut_redo.activated.connect(self.redo_action)
+
+    def undo_action(self):
+        if self.undo_stack:
+            self.undo_stack.undo()
+
+    def redo_action(self):
+        if self.undo_stack:
+            self.undo_stack.redo()
 
     def _create_background_circle(self):
         """創建背景圓形"""
@@ -570,9 +646,6 @@ class WatchPreview(QGraphicsView):
         margin = 50
         # 使用場景尺寸計算
         diameter = self.SCENE_SIZE - margin * 2
-
-        # 圓心位於場景中心
-        center = self.SCENE_SIZE / 2
 
         # 設置圓形的位置和大小
         self._background_circle.setRect(
@@ -601,8 +674,9 @@ class WatchPreview(QGraphicsView):
         self.hash_table[hash_id] = layer
 
     def eventFilter(self, watched, event):
-        if event.type() == QEvent.MouseButtonPress:
-            self.select.emit(self.hash_table[watched])
+        if event.type() == QEvent.DragMove:
+            self.dragMoveEvent(event)
+            return True
         return False
 
     def dragEnterEvent(self, event):
@@ -756,7 +830,6 @@ class AttributeForm(QScrollArea):
             self.row_layout.setSpacing(8)
             self.row_layout.addWidget(self.left)
             self.row_layout.addWidget(self.right, 1)
-            
 
         def _create_str_ui(self):
             if self.name in ["Text", "Script"]:
@@ -1277,7 +1350,7 @@ class EditView(QWidget):
 
     def __init__(self, parent=None, undo_stack=None, tip_signal=None):
         super().__init__(parent)
-        self.undo_stack=undo_stack
+        self.undo_stack = undo_stack
         self.tip_signal = tip_signal
         self.setMouseTracking(True)
         self.setAcceptDrops(True)
@@ -1432,5 +1505,6 @@ class EditView(QWidget):
 
 
 # TODO:
-#復原重作按鈕
-#container輸入邏輯修改
+# container輸入邏輯修改
+# 復原重作與信號的連結
+# 元件選擇的觸發效果
