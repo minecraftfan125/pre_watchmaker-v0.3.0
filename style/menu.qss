@@ -44,3 +44,48 @@ QMenu#fileMenu::separator {
     background-color: #3d3d3d;
     margin: 5px 10px;
 }
+
+/* ── Icon Source Dialog ─────────────────────────────── */
+
+QDialog#iconSourceDialog {
+    background-color: #1e1e1e;
+}
+
+QScrollArea#iconScrollArea {
+    background-color: #1e1e1e;
+    border: none;
+}
+
+QWidget#iconContentWidget {
+    background-color: #1e1e1e;
+}
+
+QWidget#iconCell {
+    background-color: #a1a1a1;
+    border-radius: 6px;
+}
+
+QWidget#iconCell:hover {
+    background-color: #353535;
+}
+
+QLabel#iconImage {
+    background-color: transparent;
+}
+
+QLabel#iconName {
+    background-color: transparent;
+    color: #020202;
+    font-size: 14px;
+}
+
+QFrame#iconDialogSeparator {
+    background-color: #3d3d3d;
+    border: none;
+}
+
+QLabel#iconAttribution {
+    background-color: #252525;
+    color: #888888;
+    font-size: 12px;
+}

@@ -11,7 +11,7 @@ from menu import MenuBar
 from tip_bar import TipBar
 from side_bar import SideBar
 from my_watches_view import WatchesView
-from common import StackWidget
+from undo_action import UndoGroupStack
 #from main_content_area import MainContentArea
 
 app=QApplication(sys.argv)
@@ -81,7 +81,7 @@ class MainWindow(QMainWindow):
         content_layout.addLayout(view_layout)
 
         # 創建主內容區域（使用 MainContentArea 支援分頁標籤）
-        self.main_content_area = StackWidget()
+        self.main_content_area = UndoGroupStack(self)
         self.side_bar.toggle_view.connect(self.main_content_area.setCurrentIndex)
         self.main_content_area.setObjectName("mainContentArea")
         view_layout.addWidget(self.main_content_area)
@@ -101,8 +101,8 @@ class MainWindow(QMainWindow):
         for child in self.findChildren(QWidget):
             child.setMouseTracking(True)
 
-    def _on_summon_view(self, obj, data):
-        edit_view = EditView(data=data, tip_signal=self.tip_bar.set_text)
+    def _on_summon_view(self, obj):
+        edit_view = EditView(undo_stack=self.main_content_area, tip_signal=self.tip_bar.set_text)
         # 連接腳本編輯器請求信號
         edit_view.summon_script_view.connect(self._on_summon_script_view)
         self.main_content_area.addWidget(

@@ -75,7 +75,7 @@ class WatchCard(QFrame):
         self.tip.emit("")
 
 class WatchesView(QScrollArea):
-    summon_view=pyqtSignal(object,list)
+    summon_view=pyqtSignal(object)
     def __init__(self,parent=None,signal=None,scrapbook=None):
         super().__init__(parent)
         self.tip=signal
@@ -156,7 +156,7 @@ class WatchesView(QScrollArea):
         text_label.setObjectName("addWatchText")
         card_layout.addWidget(text_label)
 
-        add_card.mousePressEvent=lambda event:self.summon_view.emit(add_card,[""])
+        add_card.mousePressEvent=lambda event:self.summon_view.emit(add_card)
 
         self.cards_content.addWidget(add_card)
 

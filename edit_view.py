@@ -522,7 +522,7 @@ class WatchPreview(QGraphicsView):
     # 場景固定大小 (錶面尺寸)
     SCENE_SIZE = 454
 
-    def __init__(self, data=None, id_stack=None, parent=None):
+    def __init__(self, undo_stack=None, id_stack=None, parent=None):
         super().__init__(parent)
         self.scale = []
         self.hash_table = {}
@@ -1275,11 +1275,9 @@ class EditView(QWidget):
     exp_singal = pyqtSignal(object, object, object)
     summon_script_view = pyqtSignal(object, object)  # (edit_view, container)
 
-    def __init__(self, parent=None, data=None, tip_signal=None):
+    def __init__(self, parent=None, undo_stack=None, tip_signal=None):
         super().__init__(parent)
-        if data is None:
-            data = [""]
-        self.data = data
+        self.undo_stack=undo_stack
         self.tip_signal = tip_signal
         self.setMouseTracking(True)
         self.setAcceptDrops(True)
@@ -1292,12 +1290,12 @@ class EditView(QWidget):
         main_layout = QHBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
-        self.explorer = Exploror(self.data, self.id_stack, self.exp_singal)
-        self.watch_preview = WatchPreview(self.data, self.id_stack)
+        self.explorer = Exploror(self.undo_stack, self.id_stack, self.exp_singal)
+        self.watch_preview = WatchPreview(self.undo_stack, self.id_stack)
 
         component_related = QSplitter(Qt.Vertical)
-        self.components = ComponentPanel(self.data)
-        self.attribute = AttributePanal(self.data, self.id_stack, self.tip_signal)
+        self.components = ComponentPanel(self.undo_stack)
+        self.attribute = AttributePanal(self.undo_stack, self.id_stack, self.tip_signal)
         self.drag_box = DragVisual(self)
         component_related.setObjectName("objectSplitter")
         component_related.setHandleWidth(2)
@@ -1434,5 +1432,5 @@ class EditView(QWidget):
 
 
 # TODO:
-#復原重作按鈕及框架
+#復原重作按鈕
 #container輸入邏輯修改
