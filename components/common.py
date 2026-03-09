@@ -284,7 +284,7 @@ markerLayer = {
     "Marker width": (1, 2048, 1),
     "Marker height": (1, 2048, 1),
     "Marker count": (1, 2048, 1),
-    "Squarify": (1, 2048, 1),
+    "Squarify": (0, 100, 1),
     "Display": ["Always"],
     "Tap action": ["None"],
     "Text effect": ["None"],

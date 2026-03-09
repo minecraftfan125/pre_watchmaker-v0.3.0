@@ -798,6 +798,7 @@ class AttributeForm(QScrollArea):
             self.left = QLabel(self.name)
             self.left.setObjectName("attrLabel")
 
+            self.right=QWidget()
             if self.attr_type == "color":
                 self._create_color_ui()
             elif self.attr_type == "widget":
@@ -835,63 +836,66 @@ class AttributeForm(QScrollArea):
             if self.name in ["Text", "Script"]:
                 self._create_num_ui()
                 return
-            self.right = QLineEdit()
-            self.right.setObjectName("attrInput")
-            self.right.textChanged.connect(self._on_text_changed)
-            if self.name == "Name":
-                print(self.signal)
-                self.right.editingFinished.connect(
-                    lambda: self.value_processing(self.right.text())
-                )
-            else:
-                self.right.textChanged.connect(self.value_processing)
-            self.right.setText(str(self.default))
-            self.signal.emit(str(self.default))
-            self.right.setAcceptDrops(False)
+            right_layout = QHBoxLayout(self.right)
+            right_layout.setContentsMargins(0, 0, 0, 0)
+            right_layout.setSpacing(4)
+            self.input = QLineEdit()
+            right_layout.addWidget(self.input)
+            self.input.setObjectName("attrInput")
+            if self.name != "Name":
+                self.input.textChanged.connect(self.value_processing)
+            self.input.editingFinished.connect(
+                lambda: self.value_processing(self.right.text(),True)
+            )
+            self.input.setText(str(self.default))
+            self.input.setAcceptDrops(False)
 
         def _create_int_ui(self):
+            right_layout = QHBoxLayout(self.right)
+            right_layout.setContentsMargins(0, 0, 0, 0)
+            right_layout.setSpacing(4)
+            self.input = QLineEdit()
+            self.input.setObjectName("attrInput")
             if self.attr_type[1] - self.attr_type[0] <= 100:
-                self.right = QWidget()
-                right_layout = QHBoxLayout(self.right)
                 slide = QSlider()
+                slide.setOrientation(1)
                 slide.setRange(self.attr_type[0], self.attr_type[1])
-                right_layout.addWidget(slide, 4)
-                self.input = QLineEdit()
-                right_layout.addWidget(slide, 1)
+                right_layout.addWidget(slide, 7)
+                right_layout.addWidget(self.input, 3)
                 slide.valueChanged.connect(lambda text: self.input.setText(str(text)))
 
                 def textEdit(text):
-                    try:
+                    if self.value_processing(text):
                         slide.setValue(int(text))
-                    except:
-                        pass
 
-                self.input.textEdited.connect(textEdit)
-                self.input.textChanged.connect(self._on_text_changed)
-                self.input.textChanged.connect(self.value_processing)
-                slide.setValue(int(self.default))
+                self.input.textChanged.connect(textEdit)
+                self.input.editingFinished.connect(
+                    lambda: self.value_processing(self.right.text(),True)
+                )
+
+                self.input.setText(str(self.default))
                 self.input.setAcceptDrops(False)
                 return
-            self.right = QLineEdit()
-            self.right.setObjectName("attrInput")
-            self.right.textChanged.connect(self._on_text_changed)
-            self.right.textChanged.connect(self.value_processing)
-            self.right.setText(str(self.default))
-            self.right.setAcceptDrops(False)
+            
+            self.input.textChanged.connect(self.value_processing)
+            self.input.editingFinished.connect(
+                lambda: self.value_processing(self.right.text(),True)
+            )
+            self.input.setText(str(self.default))
+            self.input.setAcceptDrops(False)
 
         def _create_num_ui(self):
-            self.right = QWidget()
             right_layout = QHBoxLayout(self.right)
             right_layout.setContentsMargins(0, 0, 0, 0)
             right_layout.setSpacing(4)
 
             self.input = QLineEdit()
             self.input.setObjectName("attrInput")
-            self.input.textChanged.connect(self._on_text_changed)
+            
             self.input.textChanged.connect(self.value_processing)
             self.input.setText(str(self.default))
             self.input.setAcceptDrops(False)
-            right_layout.addWidget(self.input, 1)
+            right_layout.addWidget(self.input,1)
 
             self.script_btn = QPushButton("_<")
             self.script_btn.setObjectName("scriptButton")
@@ -905,19 +909,21 @@ class AttributeForm(QScrollArea):
                 self.options = font_manager.get_available_fonts()
                 if not self.options:
                     self.options = ["Arial"]
-            self.right = QComboBox()
-            self.right.setObjectName("attrCombo")
-            self.right.addItems([str(opt) for opt in self.options])
-            index = self.right.findText(str(self.default))
-            self.right.currentTextChanged.connect(self._on_combo_changed)
-            self.right.currentTextChanged.connect(self.value_processing)
+            right_layout = QHBoxLayout(self.right)
+            right_layout.setContentsMargins(0, 0, 0, 0)
+            right_layout.setSpacing(4)
+            self.input = QComboBox()
+            right_layout.addWidget(self.input)
+            self.input.setObjectName("attrCombo")
+            self.input.addItems([str(opt) for opt in self.options])
+            index = self.input.findText(str(self.default))
+            self.input.currentTextChanged.connect(self.value_processing)
             if index >= 0:
-                self.right.setCurrentIndex(index)
+                self.input.setCurrentIndex(index)
                 self.signal.emit(str(self.default))
-            self.right.wheelEvent = lambda e: e.ignore()
+            self.input.wheelEvent = lambda e: e.ignore()
 
         def _create_color_ui(self):
-            self.right = QWidget()
             right_layout = QHBoxLayout(self.right)
             right_layout.setContentsMargins(0, 0, 0, 0)
             right_layout.setSpacing(4)
@@ -936,33 +942,42 @@ class AttributeForm(QScrollArea):
             self.input.setObjectName("attrInput")
             self.input.textChanged.connect(self._on_color_text_changed)
             self.input.textChanged.connect(self.value_processing)
+            self.input.editingFinished.connect(
+                lambda: self.value_processing(self.right.text(),True)
+            )
             self.input.setText(str(self.default))
             self.input.setAcceptDrops(False)
             right_layout.addWidget(self.input, 1)
 
         def _create_widget_ui(self):
-            self.right = QPushButton()
-            self.right.setObjectName("expandButton")
-            self.right.clicked.connect(self.open_widget_editor.emit)
-            self.signal.connect(self.right.setText)
+            right_layout = QHBoxLayout(self.right)
+            right_layout.setContentsMargins(0, 0, 0, 0)
+            right_layout.setSpacing(4)
+            self.input = QPushButton()
+            right_layout.addWidget(self.input)
+            self.input.setObjectName("expandButton")
+            self.input.clicked.connect(self.open_widget_editor.emit)
+            self.signal.connect(self.input.setText)
 
         def _create_bool_ui(self):
-            self.right = QRadioButton()
-            self.right.setObjectName("attrCombo")
-            self.right.clicked.connect(self._on_bool_changed)
-            self.right.clicked.connect(self.value_processing)
-            self.right.setChecked(self.default)
-
-        def _on_bool_changed(self, text):
-            self._value = text == "True"
-            self.default = self._value
-            self.value_changed.emit(self._value)
+            right_layout = QHBoxLayout(self.right)
+            right_layout.setContentsMargins(0, 0, 0, 0)
+            right_layout.setSpacing(4)
+            self.input = QRadioButton()
+            right_layout.addWidget(self.input)
+            self.input.setObjectName("attrCombo")
+            self.input.clicked.connect(self.value_processing)
+            self.input.setChecked(self.default)
 
         def _create_file_ui(self):
-            self.right = QPushButton()
-            self.right.setObjectName("fileButton")
+            right_layout = QHBoxLayout(self.right)
+            right_layout.setContentsMargins(0, 0, 0, 0)
+            right_layout.setSpacing(4)
+            self.input = QPushButton()
+            right_layout.addWidget(self.input)
+            self.input.setObjectName("fileButton")
             self._update_file_button_text()
-            self.right.clicked.connect(self._on_file_clicked)
+            self.input.clicked.connect(self._on_file_clicked)
 
         def _update_file_button_text(self):
             """更新檔案按鈕的顯示文字"""
@@ -993,16 +1008,6 @@ class AttributeForm(QScrollArea):
                 f"background-color: {self._current_color.name()}; border: 1px solid #4d4d4d;"
             )
 
-        def _on_text_changed(self, text):
-            self._value = text
-            self.default = text
-            self.value_changed.emit(text)
-
-        def _on_combo_changed(self, text):
-            self._value = text
-            self.default = text
-            self.value_changed.emit(text)
-
         def _on_color_clicked(self):
             color = QColorDialog.getColor(self._current_color, self, "choose color")
             if color.isValid():
@@ -1011,11 +1016,8 @@ class AttributeForm(QScrollArea):
                 hex_color = color.name()[1:]
                 self.input.setText(hex_color)
                 self._value = hex_color
-                self.value_changed.emit(hex_color)
 
         def _on_color_text_changed(self, text):
-            self._value = text
-            self.default = text
             try:
                 color = QColor(f"#{text}" if not text.startswith("#") else text)
                 if color.isValid():
@@ -1023,12 +1025,11 @@ class AttributeForm(QScrollArea):
                     self._update_color_button()
             except:
                 pass
-            self.value_changed.emit(text)
 
         def get_value(self):
             return self._value
 
-        def value_processing(self, value):
+        def value_processing(self, value, finish=False):
             try:
                 if self.attr_type == "bool":
                     value = bool(value)
