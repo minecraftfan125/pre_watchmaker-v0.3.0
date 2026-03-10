@@ -783,7 +783,7 @@ class AttributeForm(QScrollArea):
         open_script_editor = pyqtSignal(object)
         open_widget_editor = pyqtSignal()
 
-        def __init__(self, title, value, description, typ, signal, parent=None):
+        def __init__(self, title, value, description, typ, signal:pyqtSignal, parent=None):
             super().__init__(parent)
             self.name = title
             self.attr_type = typ
@@ -792,6 +792,7 @@ class AttributeForm(QScrollArea):
             self.options = typ
             self.signal = signal
             self._value = self.default
+            self.edit_finish=True
             self._create_ui()
 
         def _create_ui(self):
@@ -845,9 +846,10 @@ class AttributeForm(QScrollArea):
             if self.name != "Name":
                 self.input.textChanged.connect(self.value_processing)
             self.input.editingFinished.connect(
-                lambda: self.value_processing(self.right.text(),True)
+                lambda: self.value_processing(self.input.text(),True)
             )
             self.input.setText(str(self.default))
+            self.signal.emit(self.input.text())
             self.input.setAcceptDrops(False)
 
         def _create_int_ui(self):
@@ -870,16 +872,17 @@ class AttributeForm(QScrollArea):
 
                 self.input.textChanged.connect(textEdit)
                 self.input.editingFinished.connect(
-                    lambda: self.value_processing(self.right.text(),True)
+                    lambda: self.value_processing(self.input.text(),True)
                 )
 
                 self.input.setText(str(self.default))
                 self.input.setAcceptDrops(False)
                 return
             
+            right_layout.addWidget(self.input)
             self.input.textChanged.connect(self.value_processing)
             self.input.editingFinished.connect(
-                lambda: self.value_processing(self.right.text(),True)
+                lambda: self.value_processing(self.input.text(),True)
             )
             self.input.setText(str(self.default))
             self.input.setAcceptDrops(False)
@@ -941,9 +944,8 @@ class AttributeForm(QScrollArea):
             self.input = QLineEdit()
             self.input.setObjectName("attrInput")
             self.input.textChanged.connect(self._on_color_text_changed)
-            self.input.textChanged.connect(self.value_processing)
             self.input.editingFinished.connect(
-                lambda: self.value_processing(self.right.text(),True)
+                lambda: self.value_processing(self.input.text(),True)
             )
             self.input.setText(str(self.default))
             self.input.setAcceptDrops(False)
@@ -966,7 +968,7 @@ class AttributeForm(QScrollArea):
             self.input = QRadioButton()
             right_layout.addWidget(self.input)
             self.input.setObjectName("attrCombo")
-            self.input.clicked.connect(self.value_processing)
+            self.input.clicked.connect(lambda value:self.value_processing(value,True))
             self.input.setChecked(self.default)
 
         def _create_file_ui(self):
@@ -984,9 +986,9 @@ class AttributeForm(QScrollArea):
             if self._value and self._value != "":
                 # 顯示檔案名稱（不含路徑）
                 filename = os.path.basename(str(self._value))
-                self.right.setText(filename)
+                self.input.setText(filename)
             else:
-                self.right.setText("None")
+                self.input.setText("None")
 
         def _on_file_clicked(self):
             """開啟檔案選擇對話框"""
@@ -1001,7 +1003,7 @@ class AttributeForm(QScrollArea):
                 self.default = file_path
                 self._update_file_button_text()
                 self.value_changed.emit(file_path)
-                self.value_processing(file_path)
+                self.value_processing(file_path,True)
 
         def _update_color_button(self):
             self.color_btn.setStyleSheet(
@@ -1012,7 +1014,6 @@ class AttributeForm(QScrollArea):
             color = QColorDialog.getColor(self._current_color, self, "choose color")
             if color.isValid():
                 self._current_color = color
-                self._update_color_button()
                 hex_color = color.name()[1:]
                 self.input.setText(hex_color)
                 self._value = hex_color
@@ -1021,6 +1022,7 @@ class AttributeForm(QScrollArea):
             try:
                 color = QColor(f"#{text}" if not text.startswith("#") else text)
                 if color.isValid():
+                    self.value_processing(text if not text.startswith("#") else text[1:],True)
                     self._current_color = color
                     self._update_color_button()
             except:
@@ -1030,7 +1032,9 @@ class AttributeForm(QScrollArea):
             return self._value
 
         def value_processing(self, value, finish=False):
+            self.edit_finish=finish
             try:
+                print(value)
                 if self.attr_type == "bool":
                     value = bool(value)
                 elif isinstance(self.attr_type, tuple) and self.attr_type[2] == 1:
@@ -1046,45 +1050,36 @@ class AttributeForm(QScrollArea):
                     value = str(value)
                 self.signal.emit(value)
             except:
-                pass
+                if self.edit_finish:
+                    self.set_value(self._value)
 
-        def valid(self, text):
+        def is_valid(self, value):
             try:
-                text = str(text)
+                text = str(value)
             except:
                 return self._value
-            if text == self._value:
+            if value == self._value:
                 return self._value
             return text
 
         def set_value(self, value):
-            if self._value == self.valid(value):
+            if not self.edit_finish or self._value == self.is_valid(value):
                 return
             self._value = value
+            if self.attr_type == "bool":
+                self.input.setChecked(value)
+                return
+            value=str(value)
             if isinstance(self.attr_type, list) or self.attr_type == "font":
-                index = self.right.findText(str(value))
+                index = self.input.findText(value)
                 if index >= 0:
-                    self.right.setCurrentIndex(index)
-            elif self.attr_type == "color":
-                self.input.setText(str(value))
-                try:
-                    self._current_color = QColor(f"#{value}")
-                    self._update_color_button()
-                except:
-                    pass
-            elif isinstance(self.attr_type, tuple):
-                try:
-                    self.input.setText(str(value))
-                except AttributeError:
-                    self.right.setText(str(value))
+                    self.input.setCurrentIndex(index)
             elif self.attr_type == "widget":
-                self._value = None
-            elif self.attr_type == "bool":
-                self.right.setChecked(value)
+                self._value=None
             elif self.attr_type == "file":
                 self._update_file_button_text()
             else:
-                self.right.setText(str(value))
+                self.input.setText(value)
 
         def enterEvent(self, event):
             super().enterEvent(event)
@@ -1506,6 +1501,6 @@ class EditView(QWidget):
 
 
 # TODO:
-# container輸入邏輯修改
 # 復原重作與信號的連結
 # 元件選擇的觸發效果
+# 實作contsainer的lua編譯架構
