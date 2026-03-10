@@ -800,6 +800,7 @@ class AttributeForm(QScrollArea):
             self.left.setObjectName("attrLabel")
 
             self.right=QWidget()
+            self.signal.connect(self.set_value)
             if self.attr_type == "color":
                 self._create_color_ui()
             elif self.attr_type == "widget":
@@ -818,7 +819,6 @@ class AttributeForm(QScrollArea):
                 self._create_str_ui()
 
             self.right.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            self.signal.connect(self.set_value)
             if len(self.name) <= 8:
                 self.left.setFixedWidth(80)
                 self.row_layout = QHBoxLayout(self)
@@ -896,6 +896,9 @@ class AttributeForm(QScrollArea):
             self.input.setObjectName("attrInput")
             
             self.input.textChanged.connect(self.value_processing)
+            self.input.editingFinished.connect(
+                lambda: self.value_processing(self.input.text(),True)
+            )
             self.input.setText(str(self.default))
             self.input.setAcceptDrops(False)
             right_layout.addWidget(self.input,1)
@@ -1034,10 +1037,10 @@ class AttributeForm(QScrollArea):
         def value_processing(self, value, finish=False):
             self.edit_finish=finish
             try:
-                print(value)
                 if self.attr_type == "bool":
                     value = bool(value)
                 elif isinstance(self.attr_type, tuple) and self.attr_type[2] == 1:
+                    value = float(value)
                     value = int(value)
                 elif isinstance(self.attr_type, tuple) and self.attr_type[2] == 0:
                     value = float(value)
@@ -1051,25 +1054,32 @@ class AttributeForm(QScrollArea):
                 self.signal.emit(value)
             except:
                 if self.edit_finish:
+                    print(value)
                     self.set_value(self._value)
 
         def is_valid(self, value):
-            try:
-                text = str(value)
-            except:
+            if isinstance(self.attr_type, tuple):
+                try:
+                    value=float(value)
+                    text=re.sub(r"(\.\d*?[1-9])0+$|\.0+(?!\d)$","",str(value))
+                    if text==self.input.text():
+                        return self._value
+                    return text
+                except:
+                    return self._value
+            if value==self._value:
                 return self._value
-            if value == self._value:
-                return self._value
-            return text
-
+            return value
+            
         def set_value(self, value):
-            if not self.edit_finish or self._value == self.is_valid(value):
+            text=self.is_valid(value)
+            if not self.edit_finish or self._value == text:
                 return
             self._value = value
             if self.attr_type == "bool":
                 self.input.setChecked(value)
                 return
-            value=str(value)
+            value=text
             if isinstance(self.attr_type, list) or self.attr_type == "font":
                 index = self.input.findText(value)
                 if index >= 0:
@@ -1119,26 +1129,11 @@ class AttributeForm(QScrollArea):
         self._vlayout.setSpacing(4)
 
     def back_container(self, typ):
-        import components.common as common_defs
-
         hlayout = QHBoxLayout()
         back = QPushButton("< Back")
         home = QPushButton("Home")
         hlayout.addWidget(back)
-        if typ != "animationWidget":
-            layer_combo = QComboBox()
-            layer_combo.setObjectName("attrCombo")
-            layer_names = [
-                name
-                for name in common_defs.__all__
-                if name != "baseLayer" and name != "animationWidget"
-            ]
-            layer_combo.addItems(layer_names)
-            if self._layer_type and self._layer_type in layer_names:
-                layer_combo.setCurrentText(self._layer_type)
-            hlayout.addWidget(layer_combo)
-        else:
-            hlayout.addStretch()
+        hlayout.addStretch(1)
         hlayout.addWidget(home)
         back.clicked.connect(self.go_back.emit)
         home.clicked.connect(self.go_home.emit)
