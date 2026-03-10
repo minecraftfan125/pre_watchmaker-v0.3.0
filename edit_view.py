@@ -923,7 +923,7 @@ class AttributeForm(QScrollArea):
             self.input.setObjectName("attrCombo")
             self.input.addItems([str(opt) for opt in self.options])
             index = self.input.findText(str(self.default))
-            self.input.currentTextChanged.connect(self.value_processing)
+            self.input.currentTextChanged.connect(lambda value:self.value_processing(value,True))
             if index >= 0:
                 self.input.setCurrentIndex(index)
                 self.signal.emit(str(self.default))
@@ -1081,6 +1081,7 @@ class AttributeForm(QScrollArea):
                 return
             value=text
             if isinstance(self.attr_type, list) or self.attr_type == "font":
+                print("succ")
                 index = self.input.findText(value)
                 if index >= 0:
                     self.input.setCurrentIndex(index)
