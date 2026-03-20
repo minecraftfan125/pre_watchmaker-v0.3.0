@@ -379,8 +379,6 @@ class LuaText(str):
 # ============================================================================
 class Component:
     def init_component(self, attribute: dict, id, parent:QGraphicsScene=None):
-        if parent is not None:
-            parent.addItem(self)
         self._parent=parent
         self.start_drag_pos = None
         self.attribute = attribute

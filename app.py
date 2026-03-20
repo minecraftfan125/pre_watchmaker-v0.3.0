@@ -5,13 +5,13 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QSizePolicy)
 from PyQt5.QtCore import Qt, QPoint, QRect, QSize
 from PyQt5.QtGui import QFont, QIcon, QMouseEvent, QPixmap
-from edit_view import EditView
+from edit_view.edit_view import EditView
 from script_view import ScriptView
 from menu import MenuBar
 from tip_bar import TipBar
 from side_bar import SideBar
 from my_watches_view import WatchesView
-from undo_action import UndoGroupStack
+from common import UndoGroupStack
 #from main_content_area import MainContentArea
 
 app=QApplication(sys.argv)

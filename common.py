@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QLayout, QLabel, QStackedWidget
+from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QLayout, QLabel, QStackedWidget, QUndoCommand, QUndoStack, QUndoGroup
 from PyQt5.QtCore import QPoint, QRect, QSize, Qt, pyqtSignal, QMimeData
 from PyQt5.QtGui import QFont, QFontDatabase, QColor, QPainter, QPainterPath, QRegion, QDrag
 import os
@@ -284,7 +284,8 @@ class StackWidget(QStackedWidget):
 
     def addWidget(self, widget,obj=None , switch=True):
         if obj in self.correspond:
-            self.setCurrentWidget(self.correspond[obj])
+            if switch:
+                self.setCurrentWidget(self.correspond[obj])
             return 1
         self.correspond[obj]=widget
         index=super().addWidget(widget)
@@ -302,12 +303,50 @@ class StackWidget(QStackedWidget):
             self.setCurrentIndex(index)
 
     def removeWidget(self, widget):
-        new_correspond=[]
-        for i in self.correspond.items():
-            if not widget in i:
-                new_correspond.append(i)
-        self.correspond=dict(new_correspond)
+        if not isinstance(widget,QWidget):
+            del self.correspond[widget]
+            return super().removeWidget(widget)
+        for key in self.correspond:
+            if self.correspond[key] is widget:
+                del self.correspond[key]
+                break
         return super().removeWidget(widget)
     
     def find(self,obj):
         return self.correspond.get(obj,False)
+    
+def load_style():
+    """載入編輯視圖樣式"""
+    style_path = os.path.join(os.path.dirname(__file__), "style", "edit_view.qss")
+    try:
+        with open(style_path, "r", encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        print(f"Warning: Style file not found: {style_path}")
+        return ""
+
+class UndoGroupStack(StackWidget):
+    def __init__(self,parent=None):
+        super().__init__(parent)
+        self.undo_group=QUndoGroup(self)
+        self.undo_stack_correspond={}
+
+    def addWidget(self, widget, obj=None, switch=True):
+        result=super().addWidget(widget, obj, switch)
+        if result:
+            self.undo_group.setActiveStack(self.undo_stack_correspond[obj])
+        else:
+            new=QUndoStack(self)
+            new.setUndoLimit(50)
+            self.undo_group.addStack(new)
+            self.undo_stack_correspond[obj]=new
+        if switch:
+            self.undo_group.setActiveStack(self.undo_stack_correspond[obj])
+        return result
+    
+    def __getattr__(self,name):
+        try:
+            print(name)
+            return getattr(self.undo_group.activeStack(),name)
+        except AttributeError:
+            raise AttributeError(f"Warning:{self} try calling unknown property {name}")
