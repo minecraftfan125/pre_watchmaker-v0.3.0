@@ -4,14 +4,9 @@ from PyQt5.QtWidgets import (
     QGraphicsScene,
     QGraphicsView,
     QGraphicsEllipseItem,
-    QUndoCommand
+    QUndoCommand,
 )
-from PyQt5.QtCore import (
-    Qt,
-    pyqtSignal,
-    QSize,
-    QEvent,
-)
+from PyQt5.QtCore import Qt, pyqtSignal, QSize, QEvent, QRectF
 from PyQt5.QtGui import (
     QPixmap,
     QIcon,
@@ -22,22 +17,24 @@ from PyQt5.QtGui import (
 )
 from PyQt5.QtWidgets import QShortcut
 import common
-import summon_obj
+import edit_view.preview_obj as preview_obj
 from edit_view.drag_effect import *
 
+
 class AddLayer(QUndoCommand):
-    def __init__(self,scene:QGraphicsScene,layer):
+    def __init__(self, scene: QGraphicsScene, layer):
         super().__init__()
-        self.scene=scene
-        self.layer=layer
+        self.scene = scene
+        self.layer = layer
 
     def redo(self):
-        print("re",self.layer)
+        print("re", self.layer)
         self.scene.addItem(self.layer)
 
     def undo(self):
         print("un")
         self.scene.removeItem(self.layer)
+
 
 class WatchPreview(QGraphicsView):
     select = pyqtSignal(object)
@@ -45,30 +42,35 @@ class WatchPreview(QGraphicsView):
     receive = pyqtSignal(object, object, object)
 
     # 場景固定大小 (錶面尺寸)
-    SCENE_SIZE = 454
+    SCENE_SIZE = 512
 
-    def __init__(self, undo_stack :common.UndoGroupStack|None =None, id_stack=None, parent=None):
+    def __init__(
+        self,
+        undo_stack: common.UndoGroupStack | None = None,
+        id_stack=None,
+        parent=None,
+    ):
         super().__init__(parent)
         self.undo_stack = undo_stack
-        self.scale = []
-        self.hash_table={}
+        self.hash_table = {}
         self.id_stack = id_stack
+        self.camara_view = QRect(-256, -256, 512, 512)
         self.sence = QGraphicsScene()
+        self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
+        self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         # 設定固定的場景範圍
         self.sence.setSceneRect(
             -self.SCENE_SIZE / 2, -self.SCENE_SIZE / 2, self.SCENE_SIZE, self.SCENE_SIZE
         )
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         self.setAcceptDrops(True)
-        # 確保 viewport 也接受拖放
-        self.viewport().setAcceptDrops(True)
         self.receive.connect(self.summon_component)
         self.setScene(self.sence)
-        # 禁用滾動條
+        # 隱藏滾動條但仍可用於平移
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         # 設置拖放模式
-        self.setDragMode(QGraphicsView.NoDrag)
+        self.setDragMode(QGraphicsView.RubberBandDrag)
         self._background_circle = None
         self.set_ui()
 
@@ -84,7 +86,7 @@ class WatchPreview(QGraphicsView):
         base_path = "img/edit"
 
         self.btn_undo = QPushButton(self)
-        self.btn_undo.mouseMoveEvent=lambda event:event.ignore()
+        self.btn_undo.mouseMoveEvent = lambda event: event.ignore()
         self.btn_undo.setIcon(QIcon(QPixmap(f"{base_path}/undo-alt.png")))
         self.btn_undo.setIconSize(QSize(24, 24))
         self.btn_undo.setFixedSize(28, 28)
@@ -97,7 +99,7 @@ class WatchPreview(QGraphicsView):
         self.btn_undo.show()
 
         self.btn_redo = QPushButton(self)
-        self.btn_redo.mouseMoveEvent=lambda event:event.ignore()
+        self.btn_redo.mouseMoveEvent = lambda event: event.ignore()
         self.btn_redo.setIcon(QIcon(QPixmap(f"{base_path}/redo-alt.png")))
         self.btn_redo.setIconSize(QSize(24, 24))
         self.btn_redo.setFixedSize(28, 28)
@@ -152,10 +154,10 @@ class WatchPreview(QGraphicsView):
         )
 
     def resizeEvent(self, event):
+        view = QRect(QPoint(0, 0), event.oldSize())
         super().resizeEvent(event)
-        self.override.resize(self.size())
-        # 強制縮放內容以符合視窗大小，保持長寬比
-        self.fitInView(self.sence.sceneRect(), Qt.KeepAspectRatio)
+        rect = self.mapToScene(view).boundingRect()
+        self.fitInView(QRectF(rect), Qt.AspectRatioMode.KeepAspectRatio)
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -165,14 +167,14 @@ class WatchPreview(QGraphicsView):
     def paintEvent(self, a0):
         super().paintEvent(a0)
 
-    def push_undo_command(self,layer):
-        command=AddLayer(self.sence,layer)
+    def push_undo_command(self, layer):
+        command = AddLayer(self.sence, layer)
         self.undo_stack.push(command)
 
     def summon_component(self, layer_type, signal_dict, hash_id):
         """根據屬性和圖層類型創建元件並顯示在預覽區"""
         # 使用 summon_obj 的 create_layer 函數創建對應的圖層
-        layer = summon_obj.create_layer(layer_type, signal_dict, hash_id, self.sence)
+        layer = preview_obj.create_layer(layer_type, signal_dict, hash_id, self.sence)
         self.push_undo_command(layer)
         # 儲存到 hash_table
         self.hash_table[hash_id] = layer
@@ -212,5 +214,28 @@ class WatchPreview(QGraphicsView):
             event.acceptProposedAction()
         self.override.hide()
 
-    def required_visual_effects(self, event):
-        return event.pos(), QSize(60, 60)
+    def wheelEvent(self, event):
+        # 檢查是否按下了 Ctrl 鍵
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            angle = event.angleDelta().y()
+            factor = 1.1 if angle > 0 else 0.9
+            self.scale(factor, factor)
+            print(self.mapToScene(self.viewport().rect()).boundingRect())
+        else:
+            super().wheelEvent(event)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Control:
+            # 按下 Ctrl，切換到手掌抓取模式
+            self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+        super().keyPressEvent(event)
+
+    def keyReleaseEvent(self, event):
+        if event.key() == Qt.Key.Key_Control:
+            # 鬆開 Ctrl，切換回框選模式
+            self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
+        super().keyReleaseEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            super().mousePressEvent(event)

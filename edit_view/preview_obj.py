@@ -374,6 +374,14 @@ class ComponentFrameLine(QGraphicsRectItem):
 class LuaText(str):
     def __init__(self,text):
         super().__init__()
+
+class GraphicsScene(QGraphicsScene):
+    def __init__(self):
+        super().__init__()
+
+    def addItem(self, item):
+        super().addItem(item)
+
 # ============================================================================
 # Base Component Class
 # ============================================================================
@@ -387,7 +395,7 @@ class Component:
         self.id=id
         self.z_order=0
         self.name = ""
-        self.setFlags(QGraphicsItem.ItemIsMovable | QGraphicsItem.ItemIsSelectable)
+        self.setFlags(QGraphicsItem.ItemIsSelectable)
         self.controller = ComponentFrameLine(self)
         self.controller.setVisible(False)
         self.rotate_value=0
@@ -470,6 +478,7 @@ class Component:
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.ItemSelectedChange:
+            print(self,"select")
             self.controller.setVisible(bool(value) or self.controller.isSelected())
         return QGraphicsItem.itemChange(self, change, value)
 

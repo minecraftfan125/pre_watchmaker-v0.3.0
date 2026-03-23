@@ -24,7 +24,7 @@ from PyQt5.QtGui import (
 )
 from common import StackWidget, FontManager, UndoGroupStack
 import components
-import summon_obj
+import edit_view.preview_obj as preview_obj
 import re
 from edit_view.drag_effect import *
 
@@ -490,7 +490,7 @@ class AttributePanal(StackWidget):
             super().addWidget(widget,id,switch)
 
         for att in att_list:
-            signal = summon_obj.Signal()
+            signal = preview_obj.Signal()
             title, value = list(att.items())[0]
             signal_dict[title] = signal
             description = att["description"]
