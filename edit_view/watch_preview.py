@@ -71,6 +71,7 @@ class WatchPreview(QGraphicsView):
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         # 設置拖放模式
         self.setDragMode(QGraphicsView.RubberBandDrag)
+        self.view_topleft=self.mapToScene(self.viewport().rect().topLeft())
         self._background_circle = None
         self.set_ui()
 
@@ -154,7 +155,7 @@ class WatchPreview(QGraphicsView):
         )
 
     def resizeEvent(self, event):
-        view = QRect(QPoint(0, 0), event.oldSize())
+        view = QRect(self.view_topleft.toPoint(), event.oldSize())
         super().resizeEvent(event)
         rect = self.mapToScene(view).boundingRect()
         self.fitInView(QRectF(rect), Qt.AspectRatioMode.KeepAspectRatio)
@@ -239,3 +240,7 @@ class WatchPreview(QGraphicsView):
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        super().mouseMoveEvent(event)
+        self.view_topleft=self.mapToScene(self.viewport().rect().topLeft())

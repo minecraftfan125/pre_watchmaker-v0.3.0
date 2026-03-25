@@ -21,6 +21,7 @@ from PyQt5.QtWidgets import (
     QGraphicsItem,
     QGraphicsRectItem,
     QGraphicsPixmapItem,
+    QGraphicsEllipseItem,
     QLineEdit,
     QComboBox,
     QColorDialog,
@@ -99,281 +100,171 @@ class Signal(QObject):
             except:
                 pass
 
+class BatchProcessContainer:
+    def __init__(self, container):
+        iter(container)
+        self._container = container
+
+    def __getitem__(self, key):
+        return self._container[key]
+
+    def __len__(self):
+        return len(self._container)
+
+    def __iter__(self):
+        return iter(self._container)
+
+    def __contains__(self, item):
+        return item in self._container
+    
+    def __setitem__(self, key, value):
+        self._container[key] = value
+
+    def __delitem__(self, key):
+        del self._container[key]
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self._container!r})"
+
+    def __getattr__(self, name):
+        if hasattr(self._container, name):
+            return getattr(self._container, name)
+        
+        is_callable_feature = None 
+        
+        if isinstance(self._container, dict):
+            result_dict = {}
+            for key, value in self._container.items():
+                var = getattr(value, name)
+                
+                current_is_callable = callable(var)
+                if is_callable_feature is None:
+                    is_callable_feature = current_is_callable
+                elif is_callable_feature != current_is_callable:
+                    raise AttributeError(f"All elements of {type(self)} should have the same feature type for '{name}'")
+                
+                result_dict[key] = var
+
+            return BatchProcessContainer(result_dict)
+
+        result_list = []
+        for item in self._container:
+            var = getattr(item, name)
+            
+            current_is_callable = callable(var)
+            if is_callable_feature is None:
+                is_callable_feature = current_is_callable
+            elif is_callable_feature != current_is_callable:
+                raise AttributeError(f"All elements of {type(self)} should have the same feature type for '{name}'")
+            
+            result_list.append(var)
+            
+        return BatchProcessContainer(result_list)
+            
+    def __call__(self, *args, **kwargs):
+        if isinstance(self._container, dict):
+            result_dict = {}
+            for key, func in self._container.items():
+                if not callable(func):
+                    raise TypeError(f"Item at key '{key}' is not callable")
+                result_dict[key] = func(*args, **kwargs)
+            return BatchProcessContainer(result_dict)
+        
+        result_list = []
+        for func in self._container:
+            if not callable(func):
+                raise TypeError(f"Item {func!r} inside container is not callable")
+            result_list.append(func(*args, **kwargs))
+        return BatchProcessContainer(result_list)
 
 # =============================================================================
 # Base Layer Class
 # =============================================================================
-class Attribute(dict):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.typ = dict(self.items())
-        self.signal = {}
-        self._emitting = set()  # 防止遞歸的標誌
-        for key in self.keys():
-            self.signal[key] = Signal()
-            # 使用 lambda 並通過預設參數捕獲 key 值，避免閉包問題
-            self.signal[key].connect(lambda value, k=key: self._on_signal(k, value))
-
-    def __getitem__(self, key):
-        """取值時自動根據類型定義轉換，避免類型錯誤"""
-        value = super().__getitem__(key)
-        type_def = self.typ.get(key)
-
-        # tuple 類型: (min, max, is_int) - 數值類型
-        if isinstance(type_def, tuple) and len(type_def) >= 3:
-            try:
-                if type_def[2] == 0:  # float
-                    return float(value) if value != '' else 0.0
-                else:  # int
-                    return int(float(value)) if value != '' else 0
-            except (ValueError, TypeError):
-                return 0.0 if type_def[2] == 0 else 0
-
-        # list 類型: 選項列表 - 返回字符串
-        if isinstance(type_def, list):
-            return str(value) if value else (type_def[0] if type_def else '')
-
-        # 其他類型直接返回
-        return value
-
-    def _on_signal(self, key, value):
-        """從外部信號接收值時調用，不再發射信號避免遞歸"""
-        if key in self._emitting:
-            return
-        if key in self and self[key] == value:
-            return
-        super().__setitem__(key, value)
-
-    def set_default(self, default_value: dict):
-        """設置預設值，不觸發信號"""
-        for key, value in default_value.items():
-            if key in self:
-                super().__setitem__(key, value)
-
-    def __setitem__(self, key, value):
-        """設置值並發射信號給 Layer"""
-        if key in self._emitting:
-            return
-        if key in self and self[key] == value:
-            return
-
-        self._emitting.add(key)
-        try:
-            super().__setitem__(key, value)
-            # 根據類型轉換值，只發射一次信號
-            if isinstance(self.typ.get(key), tuple):
-                emit_value = float(value) if self.typ[key][2] == 0 else int(value)
-            else:
-                emit_value = value
-            self.signal[key].emit(emit_value)
-        finally:
-            self._emitting.discard(key)
-
-
-class Handle(QGraphicsRectItem):
-    def __init__(self, handle_type, parent=None):
-        super().__init__(-4, -4, 8, 8, parent)
-        self.handle_type = handle_type
-        self.setBrush(QColor("#FFFFFF"))
-        self.setPen(QPen(QColor("#0078D7"), 2))
-        self.setFlag(QGraphicsItem.ItemIsMovable, False)
-        self.setCursor(self._get_cursor())
-        self.dragging = False
-        self.start_pos = None
-
-    def _get_cursor(self):
-        cursors = {
-            "top-left": Qt.SizeFDiagCursor,
-            "top-right": Qt.SizeBDiagCursor,
-            "bottom-left": Qt.SizeBDiagCursor,
-            "bottom-right": Qt.SizeFDiagCursor,
-            "top": Qt.SizeVerCursor,
-            "bottom": Qt.SizeVerCursor,
-            "left": Qt.SizeHorCursor,
-            "right": Qt.SizeHorCursor,
-        }
-        return cursors.get(self.handle_type, Qt.ArrowCursor)
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            self.dragging = True
-            self.start_pos = event.scenePos()
-            event.accept()
-
-    def mouseMoveEvent(self, event):
-        if self.dragging and self.parentItem():
-            self.parentItem().resize_from_handle(
-                self.handle_type, event.scenePos(), self.start_pos
+class RotateHandle(QGraphicsEllipseItem):
+    def __init__(self,parent):
+        super().__init__(-6, 0, 12, 12,parent)
+        self.setFlags(
+            QGraphicsItem.ItemIgnoresTransformations |
+            QGraphicsItem.ItemIsSelectable
             )
-            self.start_pos = event.scenePos()
-            event.accept()
-
-    def mouseReleaseEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            self.dragging = False
-            event.accept()
-
-class RotateHandle(QGraphicsRectItem):
-    def __init__(self, parent=None):
-        super().__init__(-5, -5, 10, 10, parent)
-        self.setBrush(QColor("#4CAF50"))
-        self.setPen(QPen(QColor("#2E7D32"), 2))
-        self.setFlag(QGraphicsItem.ItemIsMovable, False)
-        self.setCursor(Qt.PointingHandCursor)
-        self.dragging = False
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            self.dragging = True
-            event.accept()
-
-    def mouseMoveEvent(self, event):
-        if self.dragging and self.parentItem():
-            self.parentItem().rotate_from_handle(event.scenePos())
-            event.accept()
-
-    def mouseReleaseEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            self.dragging = False
-            event.accept()
-
-class ComponentFrameLine(QGraphicsRectItem):
-    def __init__(self, parent_item):
-        # 繼承父物件的 boundingRect，並將自己設為父物件的子項
-        super().__init__(parent_item.boundingRect(), parent_item)
-        self.setFlags(QGraphicsItem.ItemIsMovable | QGraphicsItem.ItemIsSelectable)
-        self.setAcceptHoverEvents(True)
-
-        self.handle_size = 10  # 縮放點大小
-        self.rot_offset = 40  # 旋轉鈕上方偏移量
-        self.handle_color = QColor("#2980b9")
-
-        # 設定畫筆為虛線
-        self.setPen(QPen(self.handle_color, 1, Qt.DashLine))
-
-    def _get_handle_rects(self):
-        """計算 9 個點的局部座標位置"""
-        r = self.rect()
-        s = self.handle_size
-        hs = s / 2
-
-        res = {
-            "tl": QRectF(r.left() - hs, r.top() - hs, s, s),
-            "tm": QRectF(r.center().x() - hs, r.top() - hs, s, s),
-            "tr": QRectF(r.right() - hs, r.top() - hs, s, s),
-            "mr": QRectF(r.right() - hs, r.center().y() - hs, s, s),
-            "br": QRectF(r.right() - hs, r.bottom() - hs, s, s),
-            "bm": QRectF(r.center().x() - hs, r.bottom() - hs, s, s),
-            "bl": QRectF(r.left() - hs, r.bottom() - hs, s, s),
-            "ml": QRectF(r.left() - hs, r.center().y() - hs, s, s),
+        self.setBrush(QBrush(QColor(255, 255, 255)))
+        self.setPen(QPen(QColor(80, 150, 220),1.5))
+        
+class ScaleHandle(QGraphicsRectItem):
+    _direction={
+        "tl":(0 , 0),
+        "tc":(0.5 , 0),
+        "tr":(1 , 0),
+        "cl":(0 , 0.5),
+        "cr":(1 , 0.5),
+        "bl":(0 , 1),
+        "bc":(0.5 , 1),
+        "br":(1 , 1)
         }
+    def __init__(self,parent):
+        super().__init__(QRectF(-5,-5,10,10),parent)
+        self.setFlags(
+            QGraphicsItem.ItemIsSelectable |
+            QGraphicsItem.ItemIgnoresTransformations
+            )
+        self.setBrush(QBrush(QColor(100, 180, 255)))
+        self.setPen(QPen(Qt.white, 1))
+        parent.setFlag(QGraphicsItem.ItemSendsGeometryChanges)
 
-        # 旋轉鈕
-        rot_center = QPointF(r.center().x(), r.top() - self.rot_offset)
-        res["rot"] = QRectF(
-            rot_center.x() - hs - 2, rot_center.y() - hs - 2, s + 4, s + 4
-        )
-        return res
+    def update_transform(self):
+        #手動抵消父元件的縮放
+        p = self.parentItem()
+        if not p: return
 
-    def boundingRect(self):
-        # 必須包含所有控制點，否則繪圖會被切掉
-        return self.rect().adjusted(
-            -self.handle_size,
-            -self.rot_offset - self.handle_size,
-            self.handle_size,
-            self.handle_size,
-        )
+        # 取得父元件在場景中的總縮放比例
+        # 我們利用 transform 矩陣來提取縮放數值
+        t = p.sceneTransform()
+        sx = t.m11() # X 軸縮放
+        sy = t.m22() # Y 軸縮放
+        
+        # 套用反向縮放，但保持位移與旋轉由父元件主導
+        inverse_t = QTransform()
+        inverse_t.scale(1.0/sx if sx != 0 else 1, 1.0/sy if sy != 0 else 1)
+        self.setTransform(inverse_t)
 
-    def shape(self):
-        path = QPainterPath()
-        res = self._get_handle_rects()
-        path.addEllipse(res.pop("rot"))
-        for handle in res.values():
-            path.addRect(handle)
-        return path
+    @classmethod
+    def create_Handle(cls,parent):
+        handles={}
+        for direction in cls._direction:
+            handle=cls(parent)
+            handles[direction]=handle
+        return handles
 
-    def hoverMoveEvent(self, event):
-        """當滑鼠在控制框上移動時，根據位置改變游標"""
-        res = self._get_handle_rects()
-        pos = event.pos()
-        cursor = [
-            Qt.SizeFDiagCursor,
-            Qt.SizeVerCursor,
-            Qt.SizeBDiagCursor,
-            Qt.SizeHorCursor,
-        ]
-        angle = self.parentItem().rotation() % 360
-        offset = int((angle + 22.5) // 45)
+class SelectionBox(QGraphicsRectItem):
+    def __init__(self,parent):
+        super().__init__(parent.boundingRect(),parent)
+        self.parent=parent
+        self.setFlags(
+            QGraphicsItem.ItemIsSelectable|
+            QGraphicsItem.ItemIgnoresParentOpacity
+            )
+        
+        dashed_pen = QPen(QColor(80, 150, 220), 1.5)
+        dashed_pen.setStyle(Qt.DashLine)
+        self.setPen(dashed_pen)
+        self.setBrush(QBrush(Qt.transparent))
 
-        # 判斷滑鼠落在哪個點上
-        if res["tl"].contains(pos) or res["br"].contains(pos):
-            self.setCursor(cursor[offset % 4])
-        elif res["tm"].contains(pos) or res["bm"].contains(pos):
-            self.setCursor(cursor[(1 + offset) % 4])
-        elif res["tr"].contains(pos) or res["bl"].contains(pos):
-            self.setCursor(cursor[(2 + offset) % 4])
-        elif res["ml"].contains(pos) or res["mr"].contains(pos):
-            self.setCursor(cursor[(3 + offset) % 4])
-        elif res["rot"].contains(pos):
-            self.setCursor(Qt.OpenHandCursor)
-        else:
-            self.setCursor(Qt.ArrowCursor)
+        rotate_method=getattr(self.parent,"set_rotate",False)
+        bounding_rect=self.boundingRect()
+        if rotate_method:
+            self.rotate=RotateHandle(self)
+            self.rotate.setPos(bounding_rect.width()//2,-50)
+            self.rotate.setZValue(0)
 
-        super().hoverMoveEvent(event)
+        scale_method=getattr(self.parent,"set_scale",False)
+        if scale_method:
+            self.scale_handle=ScaleHandle.create_Handle(self)
 
-    def hoverLeaveEvent(self, event):
-        """離開控制框時恢復預設游標"""
-        self.setCursor(Qt.ArrowCursor)
-        super().hoverLeaveEvent(event)
+    def itemChange(self, change, value):
+        if (change == QGraphicsItem.ItemScaleHasChanged):
+            for
+        return super().itemChange(change, value)
 
-    def mousePressEvent(self, event):
-        res = self._get_handle_rects()
-        pos = event.pos()
-        if res["tl"].contains(pos) or res["br"].contains(pos):
-            print("1")
-        elif res["tm"].contains(pos) or res["bm"].contains(pos):
-            print("2")
-        elif res["tr"].contains(pos) or res["bl"].contains(pos):
-            print("3")
-        elif res["ml"].contains(pos) or res["mr"].contains(pos):
-            print("4")
-        elif res["rot"].contains(pos):
-            print("5")
-        else:
-            pass
-
-    def paint(self, painter, option, widget=None):
-        # 設定抗鋸齒讓圓形與斜線更美觀
-        painter.setRenderHint(QPainter.Antialiasing)
-
-        # 1. 畫主虛線框
-        painter.setPen(self.pen())
-        painter.drawRect(self.rect())
-
-        # 2. 畫連接旋轉鈕的直線
-        handles = self._get_handle_rects()
-        rot_rect = handles["rot"]
-        painter.setPen(QPen(self.handle_color, 1))
-        painter.drawLine(
-            QPointF(self.rect().center().x(), self.rect().top()),
-            QPointF(rot_rect.center().x(), rot_rect.bottom()),
-        )
-
-        # 3. 畫所有控制點
-        painter.setBrush(QBrush(Qt.white))
-        for name, rect in handles.items():
-            if name == "rot":
-                painter.setBrush(QBrush(QColor("#ecf0f1")))
-                painter.drawEllipse(rect)  # 旋轉鈕畫圓的
-                # 畫個簡單的小箭頭符號
-                painter.drawArc(rect.adjusted(2, 2, -2, -2), 0, 270 * 16)
-            else:
-                painter.setBrush(QBrush(Qt.white))
-                painter.drawRect(rect)  # 縮放點畫方的
-
-class LuaText(str):
-    def __init__(self,text):
-        super().__init__()
 
 class GraphicsScene(QGraphicsScene):
     def __init__(self):
@@ -644,7 +535,7 @@ class imageLayer(QGraphicsPixmapItem, Component):
 # Curved Text Layer (曲線文字圖層)
 # ============================================================================
 class curvedTextLayer(QGraphicsTextItem, Component):
-    def __init__(self, attribute: Attribute, parent=None):
+    def __init__(self, attribute: dict, parent=None):
         QGraphicsTextItem.__init__(self, parent)
         Component.__init__(self, attribute)
         self.setPlainText(attribute.get("Text", ""))
@@ -655,7 +546,7 @@ class curvedTextLayer(QGraphicsTextItem, Component):
 # Shape Layer (形狀圖層)
 # ============================================================================
 class shapeLayer(QGraphicsRectItem, Component):
-    def __init__(self, attribute: Attribute, parent=None):
+    def __init__(self, attribute: dict, parent=None):
         QGraphicsRectItem.__init__(self, parent)
         Component.__init__(self, attribute)
         width = attribute.get("Width", 100)
@@ -672,7 +563,7 @@ class shapeLayer(QGraphicsRectItem, Component):
 # Marker Layer (標記圖層)
 # ============================================================================
 class markerLayer(QGraphicsRectItem, Component):
-    def __init__(self, attribute: Attribute, parent=None):
+    def __init__(self, attribute: dict, parent=None):
         QGraphicsRectItem.__init__(self, parent)
         Component.__init__(self, attribute)
         radius = attribute.get("Radius", 256)
@@ -686,7 +577,7 @@ class markerLayer(QGraphicsRectItem, Component):
 # Tachymeter Layer (測速計圖層)
 # ============================================================================
 class tachymeterLayer(QGraphicsRectItem, Component):
-    def __init__(self, attribute: Attribute, parent=None):
+    def __init__(self, attribute: dict, parent=None):
         QGraphicsRectItem.__init__(self, parent)
         Component.__init__(self, attribute)
         radius = attribute.get("Radius", 230)
@@ -700,7 +591,7 @@ class tachymeterLayer(QGraphicsRectItem, Component):
 # Map Layer (地圖圖層)
 # ============================================================================
 class mapLayer(QGraphicsRectItem, Component):
-    def __init__(self, attribute: Attribute, parent=None):
+    def __init__(self, attribute: dict, parent=None):
         QGraphicsRectItem.__init__(self, parent)
         Component.__init__(self, attribute)
         width = attribute.get("Width", 512)
@@ -715,7 +606,7 @@ class mapLayer(QGraphicsRectItem, Component):
 # Slideshow Layer (幻燈片圖層)
 # ============================================================================
 class slideshowLayer(QGraphicsRectItem, Component):
-    def __init__(self, attribute: Attribute, parent=None):
+    def __init__(self, attribute: dict, parent=None):
         QGraphicsRectItem.__init__(self, parent)
         Component.__init__(self, attribute)
         width = attribute.get("Width", 300)
@@ -730,7 +621,7 @@ class slideshowLayer(QGraphicsRectItem, Component):
 # Text Ring Layer (環形文字圖層)
 # ============================================================================
 class textRingLayer(QGraphicsRectItem, Component):
-    def __init__(self, attribute: Attribute, parent=None):
+    def __init__(self, attribute: dict, parent=None):
         QGraphicsRectItem.__init__(self, parent)
         Component.__init__(self, attribute)
         radius = attribute.get("Radius", 200)
@@ -744,7 +635,7 @@ class textRingLayer(QGraphicsRectItem, Component):
 # Rounded Rectangle Layer (圓角矩形圖層)
 # ============================================================================
 class roundedRectangleLayer(QGraphicsRectItem, Component):
-    def __init__(self, attribute: Attribute, parent=None):
+    def __init__(self, attribute: dict, parent=None):
         QGraphicsRectItem.__init__(self, parent)
         Component.__init__(self, attribute)
         width = attribute.get("Width", 300)
@@ -762,7 +653,7 @@ class roundedRectangleLayer(QGraphicsRectItem, Component):
 # Series Layer (數據系列圖層)
 # ============================================================================
 class seriesLayer(QGraphicsTextItem, Component):
-    def __init__(self, attribute: Attribute, parent=None):
+    def __init__(self, attribute: dict, parent=None):
         QGraphicsTextItem.__init__(self, parent)
         Component.__init__(self, attribute)
         self.setPlainText("MON\nTUE\nWED")
@@ -773,7 +664,7 @@ class seriesLayer(QGraphicsTextItem, Component):
 # Complication Layer (複雜功能圖層)
 # ============================================================================
 class complicationLayer(QGraphicsRectItem, Component):
-    def __init__(self, attribute: Attribute, parent=None):
+    def __init__(self, attribute: dict, parent=None):
         QGraphicsRectItem.__init__(self, parent)
         Component.__init__(self, attribute)
         width = attribute.get("Width", 100)
@@ -790,7 +681,7 @@ class complicationLayer(QGraphicsRectItem, Component):
 # Chart Layer (圖表圖層)
 # ============================================================================
 class chartLayer(QGraphicsRectItem, Component):
-    def __init__(self, attribute: Attribute, parent=None):
+    def __init__(self, attribute: dict, parent=None):
         QGraphicsRectItem.__init__(self, parent)
         Component.__init__(self, attribute)
         width = attribute.get("Width", 205)
@@ -805,7 +696,7 @@ class chartLayer(QGraphicsRectItem, Component):
 # Image Condition Layer (條件圖片圖層)
 # ============================================================================
 class imageCondLayer(QGraphicsRectItem, Component):
-    def __init__(self, attribute: Attribute, parent=None):
+    def __init__(self, attribute: dict, parent=None):
         QGraphicsRectItem.__init__(self, parent)
         Component.__init__(self, attribute)
         width = attribute.get("Width", 80)
@@ -820,7 +711,7 @@ class imageCondLayer(QGraphicsRectItem, Component):
 # Image GIF Layer (GIF圖片圖層)
 # ============================================================================
 class imageGifLayer(QGraphicsRectItem, Component):
-    def __init__(self, attribute: Attribute, parent=None):
+    def __init__(self, attribute: dict, parent=None):
         QGraphicsRectItem.__init__(self, parent)
         Component.__init__(self, attribute)
         width = attribute.get("Width", 100)
@@ -835,7 +726,7 @@ class imageGifLayer(QGraphicsRectItem, Component):
 # Progress Layer (進度條圖層)
 # ============================================================================
 class progressLayer(QGraphicsRectItem, Component):
-    def __init__(self, attribute: Attribute, parent=None):
+    def __init__(self, attribute: dict, parent=None):
         QGraphicsRectItem.__init__(self, parent)
         Component.__init__(self, attribute)
         width = attribute.get("Width", 114)
@@ -853,7 +744,7 @@ class progressLayer(QGraphicsRectItem, Component):
 # Ring Layer (圓環圖層)
 # ============================================================================
 class ringLayer(QGraphicsRectItem, Component):
-    def __init__(self, attribute: Attribute, parent=None):
+    def __init__(self, attribute: dict, parent=None):
         super().__init__(parent)
         Component.__init__(self, attribute)
         radius = attribute.get("Radius outer", 57)
@@ -870,7 +761,7 @@ class ringLayer(QGraphicsRectItem, Component):
 # Markers HM Layer (時分標記圖層)
 # ============================================================================
 class markersHMLayer(QGraphicsRectItem, Component):
-    def __init__(self, attribute: Attribute, parent=None):
+    def __init__(self, attribute: dict, parent=None):
         super().__init__(parent)
         Component.__init__(self, attribute)
         radius = attribute.get("Radius", 256)
@@ -884,7 +775,7 @@ class markersHMLayer(QGraphicsRectItem, Component):
 # Directional Light Layer (方向光源圖層)
 # ============================================================================
 class directionalLightLayer(QGraphicsRectItem, Component):
-    def __init__(self, attribute: Attribute, parent=None):
+    def __init__(self, attribute: dict, parent=None):
         super().__init__(parent)
         Component.__init__(self, attribute)
         self.setRect(-30, -30, 60, 60)
@@ -900,7 +791,7 @@ class directionalLightLayer(QGraphicsRectItem, Component):
 # 3D Layer (3D圖層)
 # ============================================================================
 class layer3D(QGraphicsRectItem, Component):
-    def __init__(self, attribute: Attribute, parent=None):
+    def __init__(self, attribute: dict, parent=None):
         super().__init__(parent)
         Component.__init__(self, attribute)
         scale_x = attribute.get("Scale X", 40)

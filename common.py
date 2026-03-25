@@ -346,7 +346,6 @@ class UndoGroupStack(StackWidget):
     
     def __getattr__(self,name):
         try:
-            print(name)
             return getattr(self.undo_group.activeStack(),name)
         except AttributeError:
             raise AttributeError(f"Warning:{self} try calling unknown property {name}")
