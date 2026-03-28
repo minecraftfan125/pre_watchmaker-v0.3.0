@@ -22,6 +22,7 @@ from PyQt5.QtWidgets import (
     QGraphicsRectItem,
     QGraphicsPixmapItem,
     QGraphicsEllipseItem,
+    QGraphicsView,
     QLineEdit,
     QComboBox,
     QColorDialog,
@@ -182,13 +183,33 @@ class BatchProcessContainer:
 # =============================================================================
 class RotateHandle(QGraphicsEllipseItem):
     def __init__(self,parent):
-        super().__init__(-6, 0, 12, 12,parent)
+        super().__init__(-6, -6, 12, 12,parent)
+        self.parent=parent
         self.setFlags(
-            QGraphicsItem.ItemIgnoresTransformations |
-            QGraphicsItem.ItemIsSelectable
+            QGraphicsItem.ItemIgnoresTransformations
             )
         self.setBrush(QBrush(QColor(255, 255, 255)))
         self.setPen(QPen(QColor(80, 150, 220),1.5))
+
+    def update_pos(self):
+        t = self.parent.sceneTransform()
+        # 利用矩陣向量 (m21, m22) 計算 Y 軸的真實視覺縮放比例
+        sy = math.hypot(t.m21(), t.m22())
+        if sy == 0: sy = 1.0 # 避免除以零
+        
+        # 假設我們希望視覺上永遠距離頂端 40 像素
+        visual_distance = 40 
+        
+        # 將視覺距離除以 sy，得到抵消縮放後的局部 Y 座標
+        rect = self.parent.boundingRect()
+        self.setPos(rect.width() // 2, -visual_distance / sy)
+
+    def itemChange(self, change, value):
+
+        if change== QGraphicsItem.ItemVisibleHasChanged and value:
+            self.update_pos()
+        return super().itemChange(change, value)
+    
         
 class ScaleHandle(QGraphicsRectItem):
     _direction={
@@ -201,14 +222,14 @@ class ScaleHandle(QGraphicsRectItem):
         "bc":(0.5 , 1),
         "br":(1 , 1)
         }
-    def __init__(self,parent):
+    def __init__(self,direction,parent):
         super().__init__(QRectF(-5,-5,10,10),parent)
         self.setFlags(
-            QGraphicsItem.ItemIsSelectable |
             QGraphicsItem.ItemIgnoresTransformations
             )
         self.setBrush(QBrush(QColor(100, 180, 255)))
         self.setPen(QPen(Qt.white, 1))
+        self.direction=direction
         parent.setFlag(QGraphicsItem.ItemSendsGeometryChanges)
 
     def update_transform(self):
@@ -225,27 +246,37 @@ class ScaleHandle(QGraphicsRectItem):
         # 套用反向縮放，但保持位移與旋轉由父元件主導
         inverse_t = QTransform()
         inverse_t.scale(1.0/sx if sx != 0 else 1, 1.0/sy if sy != 0 else 1)
-        self.setTransform(inverse_t)
+        self.setTransform(inverse_t,True)
+
+    def update_pos(self,w,h):
+        x=self._direction[self.direction][0]*w
+        y=self._direction[self.direction][1]*h
+        self.setPos(x,y)
 
     @classmethod
     def create_Handle(cls,parent):
         handles={}
+        w,h=parent.boundingRect().width(),parent.boundingRect().height()
         for direction in cls._direction:
-            handle=cls(parent)
+            handle=cls(direction,parent)
+            x=cls._direction[direction][0]*w
+            y=cls._direction[direction][1]*h
+            handle.setPos(x,y)
             handles[direction]=handle
-        return handles
+        return BatchProcessContainer(handles)
 
 class SelectionBox(QGraphicsRectItem):
     def __init__(self,parent):
-        super().__init__(parent.boundingRect(),parent)
-        self.parent=parent
+        super().__init__(QRectF(0,0,0,0),parent)
+        self.parent: Component|QGraphicsItem = parent
+        self.parent_rect=QRectF(0,0,0,0)
         self.setFlags(
-            QGraphicsItem.ItemIsSelectable|
             QGraphicsItem.ItemIgnoresParentOpacity
             )
         
-        dashed_pen = QPen(QColor(80, 150, 220), 1.5)
+        dashed_pen = QPen(QColor(80, 150, 220),1)
         dashed_pen.setStyle(Qt.DashLine)
+        dashed_pen.setCosmetic(True)
         self.setPen(dashed_pen)
         self.setBrush(QBrush(Qt.transparent))
 
@@ -259,10 +290,28 @@ class SelectionBox(QGraphicsRectItem):
         scale_method=getattr(self.parent,"set_scale",False)
         if scale_method:
             self.scale_handle=ScaleHandle.create_Handle(self)
+            self.scale_handle.setZValue(1)
+        self.update_scale()
+
+    # ▼ 新增這個方法：動態計算控制點位置，抵消父元件縮放
+    def update_scale(self):
+        parent_rotate=self.parent.rotation()
+        self.parent.setRotation(0)
+        rect=self.parent.sceneBoundingRect()
+        print(self.parent.sceneBoundingRect())
+        rect.moveTo(0,0)
+        self.setRect(rect)
+        self.scale_handle.update_pos(self.rect().width(),self.rect().height())
+        self.rotate.update_pos()
+        self.parent_rect=rect
+        self.parent.setRotation(parent_rotate)
 
     def itemChange(self, change, value):
         if (change == QGraphicsItem.ItemScaleHasChanged):
-            for
+            self.scale_handle.update_transform()
+            self.rotate.update_pos()
+        if (change == QGraphicsItem.ItemVisibleChange):
+            print("show",self.rect())
         return super().itemChange(change, value)
 
 
@@ -287,11 +336,11 @@ class Component:
         self.z_order=0
         self.name = ""
         self.setFlags(QGraphicsItem.ItemIsSelectable)
-        self.controller = ComponentFrameLine(self)
-        self.controller.setVisible(False)
         self.rotate_value=0
         self.skew_x_value=0
         self.skew_y_value=0
+        self.controller = SelectionBox(self)
+        self.controller.setVisible(False)
         self.connect("Layer", self.order)
         self.connect("X", self.move_x)
         self.connect("Y", self.move_y)
@@ -340,7 +389,6 @@ class Component:
 
     def setLayerTransform(self, matrix=None, combine=False):
         if matrix is None: matrix=QTransform()
-        print(type(self.skew_x_value),self.skew_x_value,"this")
         matrix = self.shear(
             matrix,
             np.tan(np.deg2rad(self.skew_x_value)),
@@ -348,6 +396,7 @@ class Component:
         )
         matrix.rotate(float(self.rotate_value))
         QGraphicsItem.setTransform(self, matrix, combine)
+        self.controller.update_scale()
 
     def setLayerOpacity(self, opacity):
         opacity = float(opacity) / 100
@@ -419,6 +468,7 @@ class textLayer(QGraphicsTextItem, Component):
         matrix2=self.layerAlignment(matrix2)
         matrix3=matrix*matrix2
         QGraphicsItem.setTransform(self,matrix3)
+        self.controller.update_scale()
 
     def layerAlignment(self,matrix):
         rect = self.boundingRect()
@@ -470,6 +520,11 @@ class textLayer(QGraphicsTextItem, Component):
             self.y_offset=0
         self.setLayerTransform()
 
+    def set_rotate(self):
+        pass
+    def set_scale(self):
+        pass
+
 
 # ============================================================================
 # Image Layer (圖片圖層)
@@ -509,6 +564,7 @@ class imageLayer(QGraphicsPixmapItem, Component):
         matrix2=self.layerAlignment(matrix2)
         matrix3=matrix*matrix2
         QGraphicsItem.setTransform(self,matrix3)
+        self.controller.update_scale()
 
     def layerAlignment(self,matrix):
         rect = self.boundingRect()

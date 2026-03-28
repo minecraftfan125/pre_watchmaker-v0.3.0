@@ -28,11 +28,9 @@ class AddLayer(QUndoCommand):
         self.layer = layer
 
     def redo(self):
-        print("re", self.layer)
         self.scene.addItem(self.layer)
 
     def undo(self):
-        print("un")
         self.scene.removeItem(self.layer)
 
 
@@ -157,6 +155,7 @@ class WatchPreview(QGraphicsView):
     def resizeEvent(self, event):
         view = QRect(self.view_topleft.toPoint(), event.oldSize())
         super().resizeEvent(event)
+        self.override.resize(self.size())
         rect = self.mapToScene(view).boundingRect()
         self.fitInView(QRectF(rect), Qt.AspectRatioMode.KeepAspectRatio)
 
@@ -183,7 +182,6 @@ class WatchPreview(QGraphicsView):
     def eventFilter(self, watched, event):
         if event.type() == QEvent.DragMove:
             self.dragMoveEvent(event)
-            return True
         return False
 
     def dragEnterEvent(self, event):
@@ -244,3 +242,6 @@ class WatchPreview(QGraphicsView):
     def mouseMoveEvent(self, event):
         super().mouseMoveEvent(event)
         self.view_topleft=self.mapToScene(self.viewport().rect().topLeft())
+
+    def required_visual_effects(self, event):
+        return event.pos(), QSize(60, 60)
