@@ -219,7 +219,6 @@ class WatchPreview(QGraphicsView):
             angle = event.angleDelta().y()
             factor = 1.1 if angle > 0 else 0.9
             self.scale(factor, factor)
-            print(self.mapToScene(self.viewport().rect()).boundingRect())
         else:
             super().wheelEvent(event)
 

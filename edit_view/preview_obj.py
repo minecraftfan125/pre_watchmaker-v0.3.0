@@ -192,45 +192,46 @@ class RotateHandle(QGraphicsEllipseItem):
         self.setPen(QPen(QColor(80, 150, 220),1.5))
 
     def update_pos(self):
-        t = self.parent.sceneTransform()
-        # 利用矩陣向量 (m21, m22) 計算 Y 軸的真實視覺縮放比例
-        sy = math.hypot(t.m21(), t.m22())
-        if sy == 0: sy = 1.0 # 避免除以零
+        # 1. 取得 Item 相對於場景的縮放 (sy_item)
+        t_item = self.parent.sceneTransform()
+        sy_item = math.hypot(t_item.m21(), t_item.m22())
+        # 2. 取得 View 相對於場景的縮放 (sy_view)
+        # 假設只有一個 View
+        sy_view = 1.0
+        if self.scene() and self.scene().views():
+            t_view = self.scene().views()[0].viewportTransform()
+            sy_view = math.hypot(t_view.m21(), t_view.m22())
+        # 3. 總合縮放比例
+        total_sy = sy_item * sy_view
+        if total_sy == 0: total_sy = 1.0
         
-        # 假設我們希望視覺上永遠距離頂端 40 像素
         visual_distance = 40 
-        
-        # 將視覺距離除以 sy，得到抵消縮放後的局部 Y 座標
         rect = self.parent.boundingRect()
-        self.setPos(rect.width() // 2, -visual_distance / sy)
+        print(rect.width() // 2, -visual_distance / total_sy)
+        # 抵消後的 Y 座標
+        self.setPos(rect.width() // 2, -visual_distance / total_sy)
 
     def itemChange(self, change, value):
-
         if change== QGraphicsItem.ItemVisibleHasChanged and value:
             self.update_pos()
         return super().itemChange(change, value)
-    
-        
+
 class ScaleHandle(QGraphicsRectItem):
-    _direction={
-        "tl":(0 , 0),
-        "tc":(0.5 , 0),
-        "tr":(1 , 0),
-        "cl":(0 , 0.5),
-        "cr":(1 , 0.5),
-        "bl":(0 , 1),
-        "bc":(0.5 , 1),
-        "br":(1 , 1)
-        }
+    _direction = {
+    "tl": (-0.5, -0.5),
+    "tc": (0.0, -0.5),
+    "tr": (0.5, -0.5),
+    "cl": (-0.5, 0.0),
+    "cr": (0.5, 0.0),
+    "bl": (-0.5, 0.5),
+    "bc": (0.0, 0.5),
+    "br": (0.5, 0.5)
+    }
     def __init__(self,direction,parent):
         super().__init__(QRectF(-5,-5,10,10),parent)
-        self.setFlags(
-            QGraphicsItem.ItemIgnoresTransformations
-            )
         self.setBrush(QBrush(QColor(100, 180, 255)))
         self.setPen(QPen(Qt.white, 1))
         self.direction=direction
-        parent.setFlag(QGraphicsItem.ItemSendsGeometryChanges)
 
     def update_transform(self):
         #手動抵消父元件的縮放
@@ -267,51 +268,59 @@ class ScaleHandle(QGraphicsRectItem):
 
 class SelectionBox(QGraphicsRectItem):
     def __init__(self,parent):
-        super().__init__(QRectF(0,0,0,0),parent)
-        self.parent: Component|QGraphicsItem = parent
+        super().__init__(QRectF(0,0,0,0))
+        self._parent: Component|QGraphicsItem = parent
         self.parent_rect=QRectF(0,0,0,0)
         self.setFlags(
             QGraphicsItem.ItemIgnoresParentOpacity
             )
-        
+        self.updating=False
         dashed_pen = QPen(QColor(80, 150, 220),1)
         dashed_pen.setStyle(Qt.DashLine)
         dashed_pen.setCosmetic(True)
         self.setPen(dashed_pen)
         self.setBrush(QBrush(Qt.transparent))
 
-        rotate_method=getattr(self.parent,"set_rotate",False)
+        rotate_method=getattr(self._parent,"set_rotate",False)
         bounding_rect=self.boundingRect()
         if rotate_method:
             self.rotate=RotateHandle(self)
             self.rotate.setPos(bounding_rect.width()//2,-50)
             self.rotate.setZValue(0)
 
-        scale_method=getattr(self.parent,"set_scale",False)
+        scale_method=getattr(self._parent,"set_scale",False)
         if scale_method:
             self.scale_handle=ScaleHandle.create_Handle(self)
             self.scale_handle.setZValue(1)
-        self.update_scale()
+            self.setFlag(QGraphicsItem.ItemSendsGeometryChanges)
 
     # ▼ 新增這個方法：動態計算控制點位置，抵消父元件縮放
     def update_scale(self):
-        parent_rotate=self.parent.rotation()
-        self.parent.setRotation(0)
-        rect=self.parent.sceneBoundingRect()
-        print(self.parent.sceneBoundingRect())
-        rect.moveTo(0,0)
+        if self.updating:
+            return
+        self.updating=True
+        parent_rotate=self._parent.rotation()
+        print(parent_rotate)
+        self._parent.rotate(0)
+        self._parent.setLayerTransform()
+        rect=self._parent.sceneBoundingRect()
+        transform=QTransform()
+        transform.translate(rect.width()//2,rect.height()//2)
+        self.setTransform(transform)
+        self.setPos(rect.x(),rect.y())
+        rect.moveTo(-rect.width()//2,-rect.height()//2)
         self.setRect(rect)
+        self.setRotation(parent_rotate)
         self.scale_handle.update_pos(self.rect().width(),self.rect().height())
         self.rotate.update_pos()
-        self.parent_rect=rect
-        self.parent.setRotation(parent_rotate)
+        self._parent.rotate(parent_rotate)
+        self._parent.setLayerTransform()
+        self.updating=False
 
     def itemChange(self, change, value):
-        if (change == QGraphicsItem.ItemScaleHasChanged):
-            self.scale_handle.update_transform()
-            self.rotate.update_pos()
-        if (change == QGraphicsItem.ItemVisibleChange):
-            print("show",self.rect())
+        if (change == QGraphicsItem.ItemVisibleChange) and value:
+            print("show",self.rect(),value)
+            self.update_scale()
         return super().itemChange(change, value)
 
 
@@ -349,6 +358,9 @@ class Component:
         self.connect("Rotation", self.rotate)
         self.connect("Opacity", self.setLayerOpacity)
         self.connect("Display", self.display)
+        self.connect("Skew X", self.setLayerTransform)
+        self.connect("Skew Y", self.setLayerTransform)
+        self.connect("Rotation", self.setLayerTransform)
 
     def lua_translator(self):
         pass
@@ -370,11 +382,9 @@ class Component:
     
     def skew_x(self,value):
         self.skew_x_value=value
-        self.setLayerTransform()
 
     def skew_y(self,value):
         self.skew_y_value=value
-        self.setLayerTransform()
 
     def shear(self, matrix, sx, sy):
         center = self.boundingRect().center()
@@ -385,9 +395,11 @@ class Component:
 
     def rotate(self, value):
         self.rotate_value=value
-        self.setLayerTransform()
 
-    def setLayerTransform(self, matrix=None, combine=False):
+    def rotation(self):
+        return self.rotate_value
+
+    def setLayerTransform(self,_=None, matrix=None, combine=False):
         if matrix is None: matrix=QTransform()
         matrix = self.shear(
             matrix,
@@ -419,11 +431,16 @@ class Component:
     def itemChange(self, change, value):
         if change == QGraphicsItem.ItemSelectedChange:
             print(self,"select")
-            self.controller.setVisible(bool(value) or self.controller.isSelected())
+            self.controller.setVisible(bool(value))
+        if change == QGraphicsItem.ItemSceneChange:
+            if value:
+                value.addItem(self.controller)
+            else:
+                value.removeItem(self.controller)
         return QGraphicsItem.itemChange(self, change, value)
 
 
-class textLayer(QGraphicsTextItem, Component):
+class textLayer(Component, QGraphicsTextItem):
     # text
     # animation
     # font
@@ -448,6 +465,9 @@ class textLayer(QGraphicsTextItem, Component):
         self.connect("Text size", self.setTextSize)
         self.connect("Color", self.setColor)
         self.connect("Alignment",self.setAlignment)
+        self.connect("Font", self.setLayerTransform)
+        self.connect("Text size", self.setLayerTransform)
+        self.connect("Alignment",self.setLayerTransform)
         # color_dim
         # animation
         # anim_scale_x
@@ -457,7 +477,7 @@ class textLayer(QGraphicsTextItem, Component):
         # tap_action
         # text_effect
 
-    def setLayerTransform(self, value=None, matrix=None, combine=False):
+    def setLayerTransform(self,_=None, matrix=None, combine=False):
         if matrix is None: matrix=QTransform()
         matrix=self.shear(
             matrix,
@@ -467,7 +487,7 @@ class textLayer(QGraphicsTextItem, Component):
         matrix2.rotate(self.rotate_value)
         matrix2=self.layerAlignment(matrix2)
         matrix3=matrix*matrix2
-        QGraphicsItem.setTransform(self,matrix3)
+        QGraphicsItem.setTransform(self,matrix3,combine)
         self.controller.update_scale()
 
     def layerAlignment(self,matrix):
@@ -479,7 +499,7 @@ class textLayer(QGraphicsTextItem, Component):
 
     def setPlainText(self,value):
         QGraphicsTextItem.setPlainText(self,value)
-        self.setLayerTransform()
+        self.controller.update_scale()
 
     def setFontStyle(self, value):
         font_manager = FontManager()
@@ -488,7 +508,6 @@ class textLayer(QGraphicsTextItem, Component):
             current_size = 12  # 預設大小
         font = font_manager.get_font(value, current_size)
         self.setFont(font)
-        self.setLayerTransform()
 
     def setTextSize(self, value):
         current_font = self.font()
@@ -497,7 +516,6 @@ class textLayer(QGraphicsTextItem, Component):
             size = 12
         current_font.setPointSize(size)
         self.setFont(current_font)
-        self.setLayerTransform()
 
     def setColor(self, value):
         if not value:
@@ -518,7 +536,6 @@ class textLayer(QGraphicsTextItem, Component):
             self.y_offset=1
         elif "p" in value:
             self.y_offset=0
-        self.setLayerTransform()
 
     def set_rotate(self):
         pass
