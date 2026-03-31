@@ -14,6 +14,7 @@ from PyQt5.QtGui import (
     QPen,
     QBrush,
     QKeySequence,
+    QTransform
 )
 from PyQt5.QtWidgets import QShortcut
 import common
@@ -38,6 +39,7 @@ class WatchPreview(QGraphicsView):
     select = pyqtSignal(object)
     summon = pyqtSignal(object, object, object)
     receive = pyqtSignal(object, object, object)
+    view_change = pyqtSignal(QGraphicsView,QTransform)
 
     # 場景固定大小 (錶面尺寸)
     SCENE_SIZE = 512
@@ -53,7 +55,7 @@ class WatchPreview(QGraphicsView):
         self.hash_table = {}
         self.id_stack = id_stack
         self.camara_view = QRect(-256, -256, 512, 512)
-        self.sence = QGraphicsScene()
+        self.sence = preview_obj.GraphicsScene(self,self.view_change)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         # 設定固定的場景範圍
@@ -64,6 +66,7 @@ class WatchPreview(QGraphicsView):
         self.setAcceptDrops(True)
         self.receive.connect(self.summon_component)
         self.setScene(self.sence)
+        self.scene()
         # 隱藏滾動條但仍可用於平移
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -158,11 +161,13 @@ class WatchPreview(QGraphicsView):
         self.override.resize(self.size())
         rect = self.mapToScene(view).boundingRect()
         self.fitInView(QRectF(rect), Qt.AspectRatioMode.KeepAspectRatio)
+        self.view_change.emit(self,self.transform())
 
     def showEvent(self, event):
         super().showEvent(event)
         # 首次顯示時也要調整縮放
         self.fitInView(self.sence.sceneRect(), Qt.KeepAspectRatio)
+        self.view_change.emit(self,self.transform())
 
     def paintEvent(self, a0):
         super().paintEvent(a0)
@@ -219,6 +224,7 @@ class WatchPreview(QGraphicsView):
             angle = event.angleDelta().y()
             factor = 1.1 if angle > 0 else 0.9
             self.scale(factor, factor)
+            self.view_change.emit(self,self.transform())
         else:
             super().wheelEvent(event)
 

@@ -205,11 +205,11 @@ class RotateHandle(QGraphicsEllipseItem):
         total_sy = sy_item * sy_view
         if total_sy == 0: total_sy = 1.0
         
-        visual_distance = 40 
+        visual_distance = 30 
         rect = self.parent.boundingRect()
         print(rect.width() // 2, -visual_distance / total_sy)
         # 抵消後的 Y 座標
-        self.setPos(rect.width() // 2, -visual_distance / total_sy)
+        self.setPos(0, -visual_distance / total_sy-rect.height()/2)
 
     def itemChange(self, change, value):
         if change== QGraphicsItem.ItemVisibleHasChanged and value:
@@ -234,20 +234,38 @@ class ScaleHandle(QGraphicsRectItem):
         self.direction=direction
 
     def update_transform(self):
-        #手動抵消父元件的縮放
-        p = self.parentItem()
-        if not p: return
+        p = self.parentItem() # SelectionBox
+        if not p or not self.scene() or not self.scene().views(): 
+            return
 
-        # 取得父元件在場景中的總縮放比例
-        # 我們利用 transform 矩陣來提取縮放數值
-        t = p.sceneTransform()
-        sx = t.m11() # X 軸縮放
-        sy = t.m22() # Y 軸縮放
+        # 1. 取得 View 的縮放比例 (注意：這不包含 Item 自身的變換)
+        view = self.scene().views()[0]
+        view_t = view.viewportTransform()
         
-        # 套用反向縮放，但保持位移與旋轉由父元件主導
-        inverse_t = QTransform()
-        inverse_t.scale(1.0/sx if sx != 0 else 1, 1.0/sy if sy != 0 else 1)
-        self.setTransform(inverse_t,True)
+        # 計算 View 在 X 和 Y 軸上的視覺縮放倍率
+        view_sx = math.hypot(view_t.m11(), view_t.m12())
+        view_sy = math.hypot(view_t.m21(), view_t.m22())
+
+        # 2. 取得 Item (Component) 自身的縮放比例
+        # 這是為了確保手柄也不會因為你拉大圖層而變形
+        item_t = p.sceneTransform()
+        item_sx = math.hypot(item_t.m11(), item_t.m12())
+        item_sy = math.hypot(item_t.m21(), item_t.m22())
+
+        # 3. 總合抵銷倍率
+        # 我們要抵銷 (View縮放 * Item縮放)，讓手柄在螢幕上永遠是固定像素大小
+        total_sx = view_sx * item_sx
+        total_sy = view_sy * item_sy
+
+        inv_sx = 1.0 / total_sx if total_sx != 0 else 1.0
+        inv_sy = 1.0 / total_sy if total_sy != 0 else 1.0
+
+        # 4. 僅套用縮放抵消，保留旋轉繼承
+        # 注意：不要使用 setScale()，因為那會影響座標定位
+        # 使用 setTransform 並保持矩陣的旋轉部分為 0 (因為旋轉由父元件繼承)
+        t = QTransform()
+        t.scale(inv_sx, inv_sy)
+        self.setTransform(t)
 
     def update_pos(self,w,h):
         x=self._direction[self.direction][0]*w
@@ -294,6 +312,11 @@ class SelectionBox(QGraphicsRectItem):
             self.scale_handle.setZValue(1)
             self.setFlag(QGraphicsItem.ItemSendsGeometryChanges)
 
+    def update_child_state(self,transform=None):
+        self.scale_handle.update_pos(self.rect().width(),self.rect().height())
+        self.rotate.update_pos()
+        self.scale_handle.update_transform()
+
     # ▼ 新增這個方法：動態計算控制點位置，抵消父元件縮放
     def update_scale(self):
         if self.updating:
@@ -305,17 +328,17 @@ class SelectionBox(QGraphicsRectItem):
         self._parent.setLayerTransform()
         rect=self._parent.sceneBoundingRect()
         transform=QTransform()
-        transform.translate(rect.width()//2,rect.height()//2)
+        transform.translate(rect.width()/2,rect.height()/2)
         self.setTransform(transform)
         self.setPos(rect.x(),rect.y())
-        rect.moveTo(-rect.width()//2,-rect.height()//2)
+        rect.moveTo(-rect.width()/2,-rect.height()/2)
         self.setRect(rect)
         self.setRotation(parent_rotate)
-        self.scale_handle.update_pos(self.rect().width(),self.rect().height())
-        self.rotate.update_pos()
+        self.update_child_state()
         self._parent.rotate(parent_rotate)
         self._parent.setLayerTransform()
         self.updating=False
+        self.selected=True
 
     def itemChange(self, change, value):
         if (change == QGraphicsItem.ItemVisibleChange) and value:
@@ -325,11 +348,25 @@ class SelectionBox(QGraphicsRectItem):
 
 
 class GraphicsScene(QGraphicsScene):
-    def __init__(self):
-        super().__init__()
-
+    view_transform=pyqtSignal(QTransform)
+    def __init__(self,parent=None,signal=None):
+        super().__init__(parent)
+        self.signal=signal
+        if signal is not None:
+            self.signal.connect(self.viewChangeEvent)
+    
     def addItem(self, item):
         super().addItem(item)
+        if isinstance(item,SelectionBox):
+            self.view_transform.connect(item.update_child_state)
+
+    def removeItem(self, item):
+        super().removeItem(item)
+        if isinstance(item,SelectionBox):
+            self.view_transform.disconnect(item.update_child_state)
+    
+    def viewChangeEvent(self,view,transform):
+        self.view_transform.emit(transform)
 
 # ============================================================================
 # Base Component Class
@@ -431,7 +468,7 @@ class Component:
     def itemChange(self, change, value):
         if change == QGraphicsItem.ItemSelectedChange:
             print(self,"select")
-            self.controller.setVisible(bool(value))
+            self.controller.setVisible(bool(value) or self.controller.selected)
         if change == QGraphicsItem.ItemSceneChange:
             if value:
                 value.addItem(self.controller)
