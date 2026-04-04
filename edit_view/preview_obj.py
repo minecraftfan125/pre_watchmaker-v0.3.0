@@ -59,6 +59,7 @@ from PyQt5.QtGui import (
     QFontMetrics,
     QMouseEvent,
     QFont,
+    QVector2D,
 )
 from script_view import ScriptView
 from common import FlowLayout, StackWidget, FontManager
@@ -111,7 +112,7 @@ class OrderlyTransform(QTransform):
         except TypeError:
             pass
 
-    def next_step(self,matrix=None):
+    def next_step(self, matrix=None):
         if self.new is not None:
             self.push()
         if matrix is None:
@@ -239,15 +240,130 @@ class BatchProcessContainer:
 # =============================================================================
 # Base Layer Class
 # =============================================================================
-class RotateHandle(QGraphicsEllipseItem):
+class SelectionBox(QGraphicsRectItem):
     def __init__(self, parent):
+        super().__init__(QRectF(0, 0, 0, 0), parent)
+        self.parent: Component | QGraphicsItem = parent
+        self.parent_rect = QRectF(0, 0, 0, 0)
+        self.setFlags(
+            QGraphicsItem.ItemIgnoresParentOpacity
+            | QGraphicsItem.ItemIsMovable
+            | QGraphicsItem.ItemIsFocusable
+        )
+        self.updating = False
+        self.selected = False
+        dashed_pen = QPen(QColor(80, 150, 220), 1)
+        dashed_pen.setStyle(Qt.DashLine)
+        dashed_pen.setCosmetic(True)
+        self.setPen(dashed_pen)
+        self.setBrush(QBrush(Qt.transparent))
+        self.alignment = False
+        self.ctrl = False
+
+        rotate_method = getattr(self.parent, "set_rotate", False)
+        bounding_rect = self.boundingRect()
+        if rotate_method:
+            self.rotate = RotateHandle(self,rotate_method)
+            self.rotate.setPos(bounding_rect.width() // 2, -50)
+            self.rotate.setZValue(0)
+
+        scale_method = getattr(self.parent, "set_scale", False)
+        if scale_method:
+            self.scale_handle = ScaleHandle.create_Handle(self)
+            self.scale_handle.setZValue(1)
+            self.setFlag(QGraphicsItem.ItemSendsGeometryChanges)
+
+        if hasattr(self.parent, "setAlignment"):
+            self.alignment = True
+
+    def update_child_state(self, x_offset,y_offset):
+        self.scale_handle.update_pos(self.rect().width(), self.rect().height())
+        self.rotate.update_pos(x_offset,y_offset)
+        self.scale_handle.update_transform()
+
+    # ▼ 新增這個方法：動態計算控制點位置，抵消父元件縮放
+    def update_scale(self):
+        if self.updating:
+            return
+        x_offset=0
+        y_offset=0
+        self.updating = True
+        parent_rotate = self.parent.rotation()
+        self.parent.rotate(0)
+        self.parent.setLayerTransform()
+        rect = self.parent.sceneBoundingRect()
+        transform = QTransform()
+        transform.translate(rect.width() / 2, rect.height() / 2)
+        self.setTransform(transform)
+        self.setPos(rect.x(), rect.y())
+        rect.moveTo(-rect.width() / 2, -rect.height() / 2)
+        self.setRect(rect)
+        if self.alignment:
+            x_offset=self.parent.x_offset
+            y_offset=self.parent.y_offset
+            align_dx = rect.width() * x_offset
+            align_dy = rect.height() * y_offset
+            self.setTransformOriginPoint(align_dx, align_dy)
+        self.setRotation(parent_rotate)
+        self.update_child_state(x_offset,y_offset)
+        self.parent.rotate(parent_rotate)
+        self.parent.setLayerTransform()
+        self.updating = False
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Control:
+            self.ctrl = True
+        super().keyPressEvent(event)
+
+    def keyReleaseEvent(self, event):
+        if event.key() == Qt.Key.Key_Control:
+            self.ctrl = False
+        super().keyReleaseEvent(event)
+
+    def mousePressEvent(self, event):
+        self.selected = True
+        super().mousePressEvent(event)
+        event.accept()
+
+    def mouseMoveEvent(self, event):
+        super().mouseMoveEvent(event)
+        rect = self.boundingRect()
+        if not self.ctrl:
+            self.setPos(int(self.x()), int(self.y()))
+            self.parent.set_pos(
+                int(self.x() + rect.width() / 2), int(self.y() + rect.height() / 2)
+            )
+            return
+        self.parent.set_pos(
+            round(self.x() + rect.width() / 2, 2),
+            round(self.y() + rect.height() / 2, 2),
+        )
+
+    def mouseReleaseEvent(self, event):
+        super().mouseReleaseEvent(event)
+        self.selected = False
+
+    def itemChange(self, change, value):
+        if (change == QGraphicsItem.ItemVisibleChange) and value:
+            print("show", self.rect(), value)
+            self.update_scale()
+        return super().itemChange(change, value)
+
+
+class RotateHandle(QGraphicsEllipseItem):
+    def __init__(self, parent:SelectionBox, method):
         super().__init__(-6, -6, 12, 12, parent)
         self.parent = parent
         self.setFlags(QGraphicsItem.ItemIgnoresTransformations)
         self.setBrush(QBrush(QColor(255, 255, 255)))
         self.setPen(QPen(QColor(80, 150, 220), 1.5))
+        self.method=method
+        self.radius = None
+        self.start_angle = None
+        self.pie_chart = None
+        self.radius = None
 
-    def update_pos(self):
+    def update_pos(self,x_offset,y_offset):
         # 1. 取得 Item 相對於場景的縮放 (sy_item)
         t_item = self.parent.sceneTransform()
         sy_item = math.hypot(t_item.m21(), t_item.m22())
@@ -264,18 +380,58 @@ class RotateHandle(QGraphicsEllipseItem):
 
         visual_distance = 30
         rect = self.parent.boundingRect()
-        print(rect.width() // 2, -visual_distance / total_sy)
+        reverse=-1
+        if y_offset==0.5:
+            reverse=1
+        else:
+            y_offset=-0.5
         # 抵消後的 Y 座標
-        self.setPos(0, -visual_distance / total_sy - rect.height() / 2)
+        self.setPos(rect.width()*x_offset, reverse*visual_distance / total_sy + rect.height()*y_offset)
 
     def mousePressEvent(self, event):
-        print("rot")
+        self.parent.selected = True
         super().mousePressEvent(event)
+        event.accept()
 
-    def itemChange(self, change, value):
-        if change == QGraphicsItem.ItemVisibleHasChanged and value:
-            self.update_pos()
-        return super().itemChange(change, value)
+    def mouseMoveEvent(self, event):
+        center = self.parent.mapToScene(self.parent.transformOriginPoint())
+        current_pos = event.scenePos()
+        diff = current_pos - center
+        # 使用 math.atan2(y, x)，注意 Qt Y 軸向下，角度計算需謹慎
+        current_mouse_angle = math.degrees(math.atan2(diff.y(), diff.x()))
+
+        if self.radius is None:
+            # 初始點角度：手柄中心到旋轉中心的角度
+            start_diff = self.scenePos() - center
+            self.start_angle = math.degrees(math.atan2(start_diff.y(), start_diff.x()))
+            self.radius = math.hypot(start_diff.x(), start_diff.y())
+
+        # 4. 計算旋轉增量 (滑鼠轉了幾度)
+        delta_angle = current_mouse_angle - self.start_angle
+        
+        self.method(current_mouse_angle+90) 
+
+        # 6. 更新 Pie Chart
+        if self.pie_chart:
+            self.scene().removeItem(self.pie_chart)
+
+        color = QColor(80, 150, 220, 180)
+        self.pie_chart = QGraphicsEllipseItem(
+            center.x() - self.radius,
+            center.y() - self.radius,
+            self.radius * 2,
+            self.radius * 2,
+        )
+        self.scene().addItem(self.pie_chart)
+        self.pie_chart.setZValue(4002)
+        self.pie_chart.setBrush(QBrush(color))
+        self.pie_chart.setPen(QPen(Qt.NoPen))
+        
+        # Qt 的角度是逆時針為正，且起始於 3 點鐘方向
+        # setStartAngle/setSpanAngle 需乘以 16
+        self.pie_chart.setStartAngle(int(-self.start_angle * 16))
+        self.pie_chart.setSpanAngle(int(-delta_angle * 16))
+
 
 
 class ScaleHandle(QGraphicsRectItem):
@@ -290,7 +446,7 @@ class ScaleHandle(QGraphicsRectItem):
         "br": (0.5, 0.5),
     }
 
-    def __init__(self, direction, parent):
+    def __init__(self, direction, parent: SelectionBox):
         super().__init__(QRectF(-5, -5, 10, 10), parent)
         self.setBrush(QBrush(QColor(100, 180, 255)))
         self.setPen(QPen(Qt.white, 1))
@@ -351,91 +507,6 @@ class ScaleHandle(QGraphicsRectItem):
             handle.setPos(x, y)
             handles[direction] = handle
         return BatchProcessContainer(handles)
-
-
-class SelectionBox(QGraphicsRectItem):
-    def __init__(self, parent):
-        super().__init__(QRectF(0, 0, 0, 0), parent)
-        self.parent: Component | QGraphicsItem = parent
-        self.parent_rect = QRectF(0, 0, 0, 0)
-        self.setFlags(
-            QGraphicsItem.ItemIgnoresParentOpacity | QGraphicsItem.ItemIsMovable
-        )
-        self.updating = False
-        self.selected = False
-        dashed_pen = QPen(QColor(80, 150, 220), 1)
-        dashed_pen.setStyle(Qt.DashLine)
-        dashed_pen.setCosmetic(True)
-        self.setPen(dashed_pen)
-        self.setBrush(QBrush(Qt.transparent))
-        self.alignment=False
-
-        rotate_method = getattr(self.parent, "set_rotate", False)
-        bounding_rect = self.boundingRect()
-        if rotate_method:
-            self.rotate = RotateHandle(self)
-            self.rotate.setPos(bounding_rect.width() // 2, -50)
-            self.rotate.setZValue(0)
-
-        scale_method = getattr(self.parent, "set_scale", False)
-        if scale_method:
-            self.scale_handle = ScaleHandle.create_Handle(self)
-            self.scale_handle.setZValue(1)
-            self.setFlag(QGraphicsItem.ItemSendsGeometryChanges)
-
-        if hasattr(self.parent, "setAlignment"):
-            self.alignment=True
-
-    def update_child_state(self, transform=None):
-        self.scale_handle.update_pos(self.rect().width(), self.rect().height())
-        self.rotate.update_pos()
-        self.scale_handle.update_transform()
-
-    # ▼ 新增這個方法：動態計算控制點位置，抵消父元件縮放
-    def update_scale(self):
-        if self.updating:
-            return
-        self.updating = True
-        parent_rotate = self.parent.rotation()
-        print(parent_rotate)
-        self.parent.rotate(0)
-        self.parent.setLayerTransform()
-        rect = self.parent.sceneBoundingRect()
-        transform = QTransform()
-        transform.translate(rect.width() / 2, rect.height() / 2)
-        self.setTransform(transform)
-        self.setPos(rect.x(), rect.y())
-        rect.moveTo(-rect.width() / 2, -rect.height() / 2)
-        self.setRect(rect)
-        if self.alignment:
-            align_dx = rect.width() * self.parent.x_offset
-            align_dy = rect.height() * self.parent.y_offset
-            self.setTransformOriginPoint(align_dx,align_dy)
-        self.setRotation(parent_rotate)
-        self.update_child_state()
-        self.parent.rotate(parent_rotate)
-        self.parent.setLayerTransform()
-        self.updating = False
-
-    def mousePressEvent(self, event):
-        self.selected = True
-        super().mousePressEvent(event)
-        event.accept()
-
-    def mouseMoveEvent(self, event):
-        super().mouseMoveEvent(event)
-        rect = self.boundingRect()
-        self.parent.set_pos(self.x() + rect.width() / 2, self.y() + rect.height() / 2)
-
-    def mouseReleaseEvent(self, event):
-        super().mouseReleaseEvent(event)
-        self.selected = False
-
-    def itemChange(self, change, value):
-        if (change == QGraphicsItem.ItemVisibleChange) and value:
-            print("show", self.rect(), value)
-            self.update_scale()
-        return super().itemChange(change, value)
 
 
 class GraphicsScene(QGraphicsScene):
@@ -526,11 +597,13 @@ class Component:
     def rotation(self):
         return self.rotate_value
 
-    def setLayerTransform(self, _=None, matrix:OrderlyTransform=None, combine=False):
+    def setLayerTransform(self, _=None, matrix: OrderlyTransform = None, combine=False):
         if matrix is None:
             matrix = OrderlyTransform()
         matrix.next_step()
-        matrix.shear(np.tan(np.deg2rad(self.skew_x_value)),np.tan(np.deg2rad(self.skew_y_value)))
+        matrix.shear(
+            np.tan(np.deg2rad(self.skew_x_value)), np.tan(np.deg2rad(self.skew_y_value))
+        )
         matrix.next_step()
         matrix.rotate(float(self.rotate_value))
         matrix.push()
@@ -554,6 +627,9 @@ class Component:
     def set_pos(self, x, y):
         self.attribute["X"].emit(x)
         self.attribute["Y"].emit(y)
+
+    def set_rotate(self,angle):
+        self.attribute["Rotation"].emit(angle)
 
     def connect(self, key, method):
         if key in self.attribute:
@@ -586,8 +662,8 @@ class textLayer(Component, QGraphicsTextItem):
     # tap_action
     # text_effect
     def __init__(self, attribute: dict, id, parent=None):
-        self.x_offset = 0.5
-        self.y_offset = 0.5
+        self.x_offset = 0
+        self.y_offset = 0
         QGraphicsTextItem.__init__(self)
         Component.init_component(self, attribute, id, parent)
         self.setLayerTransform()
@@ -608,7 +684,7 @@ class textLayer(Component, QGraphicsTextItem):
         # tap_action
         # text_effect
 
-    def setLayerTransform(self, _=None, matrix:OrderlyTransform=None, combine=False):
+    def setLayerTransform(self, _=None, matrix: OrderlyTransform = None, combine=False):
         if matrix is None:
             matrix = OrderlyTransform()
         matrix.next_step()
@@ -680,9 +756,6 @@ class textLayer(Component, QGraphicsTextItem):
         align_dy = rect.height() * self.y_offset
         self.attribute["X"].emit(x + align_dx)
         self.attribute["Y"].emit(y + align_dy)
-
-    def set_rotate(self):
-        pass
 
     def set_scale(self):
         pass
