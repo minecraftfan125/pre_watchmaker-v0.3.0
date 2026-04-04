@@ -27,7 +27,7 @@ from PyQt5.QtWidgets import (
     QComboBox,
     QColorDialog,
     QGraphicsOpacityEffect,
-    QGraphicsScene
+    QGraphicsScene,
 )
 from PyQt5.QtCore import (
     Qt,
@@ -58,7 +58,7 @@ from PyQt5.QtGui import (
     QTransform,
     QFontMetrics,
     QMouseEvent,
-    QFont
+    QFont,
 )
 from script_view import ScriptView
 from common import FlowLayout, StackWidget, FontManager
@@ -73,7 +73,7 @@ class Signal(QObject):
     thisB = pyqtSignal(bool)
 
     def __init__(self, parent=None):
-        self._emit=None
+        self._emit = None
         super().__init__(parent)
 
     def connect(self, method):
@@ -90,7 +90,7 @@ class Signal(QObject):
         self.thisS.disconnect(method)
 
     def emit(self, value):
-        self._emit=value
+        self._emit = value
         if isinstance(value, bool):
             self.thisB.emit(value)
         elif isinstance(value, float) or isinstance(value, int):
@@ -100,6 +100,59 @@ class Signal(QObject):
                 self.thisS.emit(value)
             except:
                 pass
+
+
+class OrderlyTransform(QTransform):
+    def __init__(self, inherit=None):
+        super().__init__()
+        self.new = inherit
+        try:
+            self.push()
+        except TypeError:
+            pass
+
+    def next_step(self,matrix=None):
+        if self.new is not None:
+            self.push()
+        if matrix is None:
+            self.new = QTransform()
+            return
+        self.new = matrix
+
+    def push(self):
+        self *= self.new
+        self.new = None
+
+    def rotate(self, angle, axis=Qt.ZAxis):
+        if self.new is None:
+            return super().rotate(angle, axis)
+        self.new.rotate(angle, axis)
+
+    def rotateRadians(self, angle, axis=Qt.ZAxis):
+        if self.new is None:
+            return super().rotateRadians(angle, axis)
+        self.new.rotateRadians(angle, axis)
+
+    def scale(self, sx, sy):
+        if self.new is None:
+            return super().scale(sx, sy)
+        self.new.scale(sx, sy)
+
+    def setMatrix(self, m11, m12, m13, m21, m22, m23, m31, m32, m33):
+        if self.new is None:
+            return super().setMatrix(m11, m12, m13, m21, m22, m23, m31, m32, m33)
+        self.new.setMatrix(m11, m12, m13, m21, m22, m23, m31, m32, m33)
+
+    def shear(self, sh, sv):
+        if self.new is None:
+            return super().shear(sh, sv)
+        self.new.shear(sh, sv)
+
+    def translate(self, dx, dy):
+        if self.new is None:
+            return super().translate(dx, dy)
+        self.new.translate(dx, dy)
+
 
 class BatchProcessContainer:
     def __init__(self, container):
@@ -117,7 +170,7 @@ class BatchProcessContainer:
 
     def __contains__(self, item):
         return item in self._container
-    
+
     def __setitem__(self, key, value):
         self._container[key] = value
 
@@ -130,20 +183,22 @@ class BatchProcessContainer:
     def __getattr__(self, name):
         if hasattr(self._container, name):
             return getattr(self._container, name)
-        
-        is_callable_feature = None 
-        
+
+        is_callable_feature = None
+
         if isinstance(self._container, dict):
             result_dict = {}
             for key, value in self._container.items():
                 var = getattr(value, name)
-                
+
                 current_is_callable = callable(var)
                 if is_callable_feature is None:
                     is_callable_feature = current_is_callable
                 elif is_callable_feature != current_is_callable:
-                    raise AttributeError(f"All elements of {type(self)} should have the same feature type for '{name}'")
-                
+                    raise AttributeError(
+                        f"All elements of {type(self)} should have the same feature type for '{name}'"
+                    )
+
                 result_dict[key] = var
 
             return BatchProcessContainer(result_dict)
@@ -151,17 +206,19 @@ class BatchProcessContainer:
         result_list = []
         for item in self._container:
             var = getattr(item, name)
-            
+
             current_is_callable = callable(var)
             if is_callable_feature is None:
                 is_callable_feature = current_is_callable
             elif is_callable_feature != current_is_callable:
-                raise AttributeError(f"All elements of {type(self)} should have the same feature type for '{name}'")
-            
+                raise AttributeError(
+                    f"All elements of {type(self)} should have the same feature type for '{name}'"
+                )
+
             result_list.append(var)
-            
+
         return BatchProcessContainer(result_list)
-            
+
     def __call__(self, *args, **kwargs):
         if isinstance(self._container, dict):
             result_dict = {}
@@ -170,7 +227,7 @@ class BatchProcessContainer:
                     raise TypeError(f"Item at key '{key}' is not callable")
                 result_dict[key] = func(*args, **kwargs)
             return BatchProcessContainer(result_dict)
-        
+
         result_list = []
         for func in self._container:
             if not callable(func):
@@ -178,18 +235,17 @@ class BatchProcessContainer:
             result_list.append(func(*args, **kwargs))
         return BatchProcessContainer(result_list)
 
+
 # =============================================================================
 # Base Layer Class
 # =============================================================================
 class RotateHandle(QGraphicsEllipseItem):
-    def __init__(self,parent):
-        super().__init__(-6, -6, 12, 12,parent)
-        self.parent=parent
-        self.setFlags(
-            QGraphicsItem.ItemIgnoresTransformations
-            )
+    def __init__(self, parent):
+        super().__init__(-6, -6, 12, 12, parent)
+        self.parent = parent
+        self.setFlags(QGraphicsItem.ItemIgnoresTransformations)
         self.setBrush(QBrush(QColor(255, 255, 255)))
-        self.setPen(QPen(QColor(80, 150, 220),1.5))
+        self.setPen(QPen(QColor(80, 150, 220), 1.5))
 
     def update_pos(self):
         # 1. 取得 Item 相對於場景的縮放 (sy_item)
@@ -203,45 +259,52 @@ class RotateHandle(QGraphicsEllipseItem):
             sy_view = math.hypot(t_view.m21(), t_view.m22())
         # 3. 總合縮放比例
         total_sy = sy_item * sy_view
-        if total_sy == 0: total_sy = 1.0
-        
-        visual_distance = 30 
+        if total_sy == 0:
+            total_sy = 1.0
+
+        visual_distance = 30
         rect = self.parent.boundingRect()
         print(rect.width() // 2, -visual_distance / total_sy)
         # 抵消後的 Y 座標
-        self.setPos(0, -visual_distance / total_sy-rect.height()/2)
+        self.setPos(0, -visual_distance / total_sy - rect.height() / 2)
+
+    def mousePressEvent(self, event):
+        print("rot")
+        super().mousePressEvent(event)
 
     def itemChange(self, change, value):
-        if change== QGraphicsItem.ItemVisibleHasChanged and value:
+        if change == QGraphicsItem.ItemVisibleHasChanged and value:
             self.update_pos()
         return super().itemChange(change, value)
 
+
 class ScaleHandle(QGraphicsRectItem):
     _direction = {
-    "tl": (-0.5, -0.5),
-    "tc": (0.0, -0.5),
-    "tr": (0.5, -0.5),
-    "cl": (-0.5, 0.0),
-    "cr": (0.5, 0.0),
-    "bl": (-0.5, 0.5),
-    "bc": (0.0, 0.5),
-    "br": (0.5, 0.5)
+        "tl": (-0.5, -0.5),
+        "tc": (0.0, -0.5),
+        "tr": (0.5, -0.5),
+        "cl": (-0.5, 0.0),
+        "cr": (0.5, 0.0),
+        "bl": (-0.5, 0.5),
+        "bc": (0.0, 0.5),
+        "br": (0.5, 0.5),
     }
-    def __init__(self,direction,parent):
-        super().__init__(QRectF(-5,-5,10,10),parent)
+
+    def __init__(self, direction, parent):
+        super().__init__(QRectF(-5, -5, 10, 10), parent)
         self.setBrush(QBrush(QColor(100, 180, 255)))
         self.setPen(QPen(Qt.white, 1))
-        self.direction=direction
+        self.direction = direction
 
     def update_transform(self):
-        p = self.parentItem() # SelectionBox
-        if not p or not self.scene() or not self.scene().views(): 
+        p = self.parentItem()  # SelectionBox
+        if not p or not self.scene() or not self.scene().views():
             return
 
         # 1. 取得 View 的縮放比例 (注意：這不包含 Item 自身的變換)
         view = self.scene().views()[0]
         view_t = view.viewportTransform()
-        
+
         # 計算 View 在 X 和 Y 軸上的視覺縮放倍率
         view_sx = math.hypot(view_t.m11(), view_t.m12())
         view_sy = math.hypot(view_t.m21(), view_t.m22())
@@ -267,53 +330,64 @@ class ScaleHandle(QGraphicsRectItem):
         t.scale(inv_sx, inv_sy)
         self.setTransform(t)
 
-    def update_pos(self,w,h):
-        x=self._direction[self.direction][0]*w
-        y=self._direction[self.direction][1]*h
-        self.setPos(x,y)
+    def update_pos(self, w, h):
+        x = self._direction[self.direction][0] * w
+        y = self._direction[self.direction][1] * h
+        self.setPos(x, y)
+
+    def mousePressEvent(self, event):
+        print("slc", self.direction)
+        super().mousePressEvent(event)
+        event.accept()
 
     @classmethod
-    def create_Handle(cls,parent):
-        handles={}
-        w,h=parent.boundingRect().width(),parent.boundingRect().height()
+    def create_Handle(cls, parent):
+        handles = {}
+        w, h = parent.boundingRect().width(), parent.boundingRect().height()
         for direction in cls._direction:
-            handle=cls(direction,parent)
-            x=cls._direction[direction][0]*w
-            y=cls._direction[direction][1]*h
-            handle.setPos(x,y)
-            handles[direction]=handle
+            handle = cls(direction, parent)
+            x = cls._direction[direction][0] * w
+            y = cls._direction[direction][1] * h
+            handle.setPos(x, y)
+            handles[direction] = handle
         return BatchProcessContainer(handles)
 
+
 class SelectionBox(QGraphicsRectItem):
-    def __init__(self,parent):
-        super().__init__(QRectF(0,0,0,0))
-        self._parent: Component|QGraphicsItem = parent
-        self.parent_rect=QRectF(0,0,0,0)
+    def __init__(self, parent):
+        super().__init__(QRectF(0, 0, 0, 0), parent)
+        self.parent: Component | QGraphicsItem = parent
+        self.parent_rect = QRectF(0, 0, 0, 0)
         self.setFlags(
-            QGraphicsItem.ItemIgnoresParentOpacity
-            )
-        self.updating=False
-        dashed_pen = QPen(QColor(80, 150, 220),1)
+            QGraphicsItem.ItemIgnoresParentOpacity | QGraphicsItem.ItemIsMovable
+        )
+        self.updating = False
+        self.selected = False
+        dashed_pen = QPen(QColor(80, 150, 220), 1)
         dashed_pen.setStyle(Qt.DashLine)
         dashed_pen.setCosmetic(True)
         self.setPen(dashed_pen)
         self.setBrush(QBrush(Qt.transparent))
+        self.alignment=False
 
-        rotate_method=getattr(self._parent,"set_rotate",False)
-        bounding_rect=self.boundingRect()
+        rotate_method = getattr(self.parent, "set_rotate", False)
+        bounding_rect = self.boundingRect()
         if rotate_method:
-            self.rotate=RotateHandle(self)
-            self.rotate.setPos(bounding_rect.width()//2,-50)
+            self.rotate = RotateHandle(self)
+            self.rotate.setPos(bounding_rect.width() // 2, -50)
             self.rotate.setZValue(0)
 
-        scale_method=getattr(self._parent,"set_scale",False)
+        scale_method = getattr(self.parent, "set_scale", False)
         if scale_method:
-            self.scale_handle=ScaleHandle.create_Handle(self)
+            self.scale_handle = ScaleHandle.create_Handle(self)
             self.scale_handle.setZValue(1)
             self.setFlag(QGraphicsItem.ItemSendsGeometryChanges)
 
-    def update_child_state(self,transform=None):
-        self.scale_handle.update_pos(self.rect().width(),self.rect().height())
+        if hasattr(self.parent, "setAlignment"):
+            self.alignment=True
+
+    def update_child_state(self, transform=None):
+        self.scale_handle.update_pos(self.rect().width(), self.rect().height())
         self.rotate.update_pos()
         self.scale_handle.update_transform()
 
@@ -321,70 +395,89 @@ class SelectionBox(QGraphicsRectItem):
     def update_scale(self):
         if self.updating:
             return
-        self.updating=True
-        parent_rotate=self._parent.rotation()
+        self.updating = True
+        parent_rotate = self.parent.rotation()
         print(parent_rotate)
-        self._parent.rotate(0)
-        self._parent.setLayerTransform()
-        rect=self._parent.sceneBoundingRect()
-        transform=QTransform()
-        transform.translate(rect.width()/2,rect.height()/2)
+        self.parent.rotate(0)
+        self.parent.setLayerTransform()
+        rect = self.parent.sceneBoundingRect()
+        transform = QTransform()
+        transform.translate(rect.width() / 2, rect.height() / 2)
         self.setTransform(transform)
-        self.setPos(rect.x(),rect.y())
-        rect.moveTo(-rect.width()/2,-rect.height()/2)
+        self.setPos(rect.x(), rect.y())
+        rect.moveTo(-rect.width() / 2, -rect.height() / 2)
         self.setRect(rect)
+        if self.alignment:
+            align_dx = rect.width() * self.parent.x_offset
+            align_dy = rect.height() * self.parent.y_offset
+            self.setTransformOriginPoint(align_dx,align_dy)
         self.setRotation(parent_rotate)
         self.update_child_state()
-        self._parent.rotate(parent_rotate)
-        self._parent.setLayerTransform()
-        self.updating=False
-        self.selected=True
+        self.parent.rotate(parent_rotate)
+        self.parent.setLayerTransform()
+        self.updating = False
+
+    def mousePressEvent(self, event):
+        self.selected = True
+        super().mousePressEvent(event)
+        event.accept()
+
+    def mouseMoveEvent(self, event):
+        super().mouseMoveEvent(event)
+        rect = self.boundingRect()
+        self.parent.set_pos(self.x() + rect.width() / 2, self.y() + rect.height() / 2)
+
+    def mouseReleaseEvent(self, event):
+        super().mouseReleaseEvent(event)
+        self.selected = False
 
     def itemChange(self, change, value):
         if (change == QGraphicsItem.ItemVisibleChange) and value:
-            print("show",self.rect(),value)
+            print("show", self.rect(), value)
             self.update_scale()
         return super().itemChange(change, value)
 
 
 class GraphicsScene(QGraphicsScene):
-    view_transform=pyqtSignal(QTransform)
-    def __init__(self,parent=None,signal=None):
+    view_transform = pyqtSignal(QTransform)
+
+    def __init__(self, parent=None, signal=None):
         super().__init__(parent)
-        self.signal=signal
+        self.signal = signal
         if signal is not None:
             self.signal.connect(self.viewChangeEvent)
-    
+
     def addItem(self, item):
         super().addItem(item)
-        if isinstance(item,SelectionBox):
+        if isinstance(item, SelectionBox):
             self.view_transform.connect(item.update_child_state)
 
     def removeItem(self, item):
         super().removeItem(item)
-        if isinstance(item,SelectionBox):
+        if isinstance(item, SelectionBox):
             self.view_transform.disconnect(item.update_child_state)
-    
-    def viewChangeEvent(self,view,transform):
+
+    def viewChangeEvent(self, view, transform):
         self.view_transform.emit(transform)
+
 
 # ============================================================================
 # Base Component Class
 # ============================================================================
 class Component:
-    def init_component(self, attribute: dict, id, parent:QGraphicsScene=None):
-        self._parent=parent
+    def init_component(self, attribute: dict, id, parent: QGraphicsScene = None):
+        self.parent = parent
         self.start_drag_pos = None
         self.attribute = attribute
         self.start_drag_pos = None
         self.draging = False
-        self.id=id
-        self.z_order=0
+        self.id = id
+        self.z_order = 0
         self.name = ""
         self.setFlags(QGraphicsItem.ItemIsSelectable)
-        self.rotate_value=0
-        self.skew_x_value=0
-        self.skew_y_value=0
+        self.rotate_value = 0
+        self.skew_x_value = 0
+        self.skew_y_value = 0
         self.controller = SelectionBox(self)
         self.controller.setVisible(False)
         self.connect("Layer", self.order)
@@ -402,8 +495,8 @@ class Component:
     def lua_translator(self):
         pass
 
-    def order(self,value):
-        self.setZValue(-999+value)
+    def order(self, value):
+        self.setZValue(-999 + value)
 
     def rename(self, value):
         self.name = value
@@ -416,34 +509,31 @@ class Component:
 
     def gyro(self, value):
         return
-    
-    def skew_x(self,value):
-        self.skew_x_value=value
 
-    def skew_y(self,value):
-        self.skew_y_value=value
+    def skew_x(self, value):
+        self.skew_x_value = value
+
+    def skew_y(self, value):
+        self.skew_y_value = value
 
     def shear(self, matrix, sx, sy):
-        center = self.boundingRect().center()
-        matrix.translate(center.x(), center.y())
         matrix.shear(-sx, -sy)
-        matrix.translate(-center.x(), -center.y())
         return matrix
 
     def rotate(self, value):
-        self.rotate_value=value
+        self.rotate_value = value
 
     def rotation(self):
         return self.rotate_value
 
-    def setLayerTransform(self,_=None, matrix=None, combine=False):
-        if matrix is None: matrix=QTransform()
-        matrix = self.shear(
-            matrix,
-            np.tan(np.deg2rad(self.skew_x_value)),
-            np.tan(np.deg2rad(self.skew_y_value)),
-        )
+    def setLayerTransform(self, _=None, matrix:OrderlyTransform=None, combine=False):
+        if matrix is None:
+            matrix = OrderlyTransform()
+        matrix.next_step()
+        matrix.shear(np.tan(np.deg2rad(self.skew_x_value)),np.tan(np.deg2rad(self.skew_y_value)))
+        matrix.next_step()
         matrix.rotate(float(self.rotate_value))
+        matrix.push()
         QGraphicsItem.setTransform(self, matrix, combine)
         self.controller.update_scale()
 
@@ -461,13 +551,17 @@ class Component:
         if value == "Never":
             pass
 
+    def set_pos(self, x, y):
+        self.attribute["X"].emit(x)
+        self.attribute["Y"].emit(y)
+
     def connect(self, key, method):
         if key in self.attribute:
             self.attribute[key].connect(method)
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.ItemSelectedChange:
-            print(self,"select")
+            print(self, "select")
             self.controller.setVisible(bool(value) or self.controller.selected)
         if change == QGraphicsItem.ItemSceneChange:
             if value:
@@ -492,19 +586,19 @@ class textLayer(Component, QGraphicsTextItem):
     # tap_action
     # text_effect
     def __init__(self, attribute: dict, id, parent=None):
-        self.x_offset=0.5
-        self.y_offset=0.5
+        self.x_offset = 0.5
+        self.y_offset = 0.5
         QGraphicsTextItem.__init__(self)
-        Component.init_component(self, attribute, id,parent)
+        Component.init_component(self, attribute, id, parent)
         self.setLayerTransform()
         self.connect("Text", self.setPlainText)
         self.connect("Font", self.setFontStyle)
         self.connect("Text size", self.setTextSize)
         self.connect("Color", self.setColor)
-        self.connect("Alignment",self.setAlignment)
+        self.connect("Alignment", self.setAlignment)
         self.connect("Font", self.setLayerTransform)
         self.connect("Text size", self.setLayerTransform)
-        self.connect("Alignment",self.setLayerTransform)
+        self.connect("Alignment", self.setLayerTransform)
         # color_dim
         # animation
         # anim_scale_x
@@ -514,28 +608,33 @@ class textLayer(Component, QGraphicsTextItem):
         # tap_action
         # text_effect
 
-    def setLayerTransform(self,_=None, matrix=None, combine=False):
-        if matrix is None: matrix=QTransform()
-        matrix=self.shear(
-            matrix,
+    def setLayerTransform(self, _=None, matrix:OrderlyTransform=None, combine=False):
+        if matrix is None:
+            matrix = OrderlyTransform()
+        matrix.next_step()
+        rect = self.boundingRect()
+        matrix.translate(-rect.width() / 2, -rect.height() / 2)
+        matrix.next_step()
+        matrix.shear(
             np.tan(np.deg2rad(self.skew_x_value)),
-            np.tan(np.deg2rad(self.skew_y_value)))
-        matrix2=QTransform()
-        matrix2.rotate(self.rotate_value)
-        matrix2=self.layerAlignment(matrix2)
-        matrix3=matrix*matrix2
-        QGraphicsItem.setTransform(self,matrix3,combine)
+            np.tan(np.deg2rad(self.skew_y_value)),
+        )
+        matrix.next_step(self.layerAlignment(QTransform()))
+        matrix.next_step()
+        matrix.rotate(self.rotate_value)
+        matrix.push()
+        QGraphicsItem.setTransform(self, matrix, combine)
         self.controller.update_scale()
 
-    def layerAlignment(self,matrix):
+    def layerAlignment(self, matrix):
         rect = self.boundingRect()
         align_dx = -rect.width() * self.x_offset
         align_dy = -rect.height() * self.y_offset
         matrix.translate(align_dx, align_dy)
         return matrix
 
-    def setPlainText(self,value):
-        QGraphicsTextItem.setPlainText(self,value)
+    def setPlainText(self, value):
+        QGraphicsTextItem.setPlainText(self, value)
         self.controller.update_scale()
 
     def setFontStyle(self, value):
@@ -561,21 +660,30 @@ class textLayer(Component, QGraphicsTextItem):
         color_str = value if value.startswith("#") else f"#{value}"
         self.setDefaultTextColor(QColor(color_str))
 
-    def setAlignment(self,value):
+    def setAlignment(self, value):
+        print(value)
         if "c" in value.lower():
-            self.x_offset=0.5
-            self.y_offset=0.5
+            self.x_offset = 0
+            self.y_offset = 0
         if "l" in value:
-            self.x_offset=0
+            self.x_offset = -0.5
         elif "i" in value:
-            self.x_offset=1
+            self.x_offset = 0.5
         if "B" in value:
-            self.y_offset=1
+            self.y_offset = 0.5
         elif "p" in value:
-            self.y_offset=0
+            self.y_offset = -0.5
+
+    def set_pos(self, x, y):
+        rect = self.boundingRect()
+        align_dx = rect.width() * self.x_offset
+        align_dy = rect.height() * self.y_offset
+        self.attribute["X"].emit(x + align_dx)
+        self.attribute["Y"].emit(y + align_dy)
 
     def set_rotate(self):
         pass
+
     def set_scale(self):
         pass
 
@@ -585,61 +693,64 @@ class textLayer(Component, QGraphicsTextItem):
 # ============================================================================
 class imageLayer(QGraphicsPixmapItem, Component):
     def __init__(self, attribute: dict, parent=None):
-        self.x_offset=0.5
-        self.y_offset=0.5
+        self.x_offset = 0.5
+        self.y_offset = 0.5
         QGraphicsPixmapItem.__init__(self, parent)
         Component.init_component(self, attribute)
         self.setPixmap(self.attribute["Custom image"])
-        self.connect("Custom image",self.setPixmap)
-        self.connect("Width",self.setLayerTransform)
-        self.connect("Height",self.setLayerTransform)
+        self.connect("Custom image", self.setPixmap)
+        self.connect("Width", self.setLayerTransform)
+        self.connect("Height", self.setLayerTransform)
         # TODO: Load actual image from Custom image path
 
     def setPixmap(self, pixmap):
-        pixmap=QPixmap(pixmap)
+        pixmap = QPixmap(pixmap)
         super().setPixmap(pixmap)
         self.setLayerTransform()
 
     def setLayerTransform(self, value=None, matrix=None, combine=False):
-        if matrix is None: matrix=QTransform()
-        matrix=self.shear(
+        if matrix is None:
+            matrix = QTransform()
+        matrix = self.shear(
             matrix,
             np.tan(np.deg2rad(self.attribute["Skew X"])),
-            np.tan(np.deg2rad(self.attribute["Skew Y"])),)
-        matrix2=QTransform()
+            np.tan(np.deg2rad(self.attribute["Skew Y"])),
+        )
+        matrix2 = QTransform()
         try:
-            pixmap=self.pixmap()
-            sw=self.attribute["Width"]/pixmap.width()
-            sh=self.attribute["Height"]/pixmap.height()
-            matrix2.scale(sw,sh)
+            pixmap = self.pixmap()
+            sw = self.attribute["Width"] / pixmap.width()
+            sh = self.attribute["Height"] / pixmap.height()
+            matrix2.scale(sw, sh)
         except:
             pass
         self.rotate(matrix2)
-        matrix2=self.layerAlignment(matrix2)
-        matrix3=matrix*matrix2
-        QGraphicsItem.setTransform(self,matrix3)
+        matrix2 = self.layerAlignment(matrix2)
+        matrix3 = matrix * matrix2
+        QGraphicsItem.setTransform(self, matrix3)
         self.controller.update_scale()
 
-    def layerAlignment(self,matrix):
+    def layerAlignment(self, matrix):
         rect = self.boundingRect()
         align_dx = -rect.width() * self.x_offset
         align_dy = -rect.height() * self.y_offset
         matrix.translate(align_dx, align_dy)
         return matrix
 
-    def setAlignment(self,value):
+    def setAlignment(self, value):
         if "c" in value.lower():
-            self.x_offset=0.5
-            self.y_offset=0.5
+            self.x_offset = 0.5
+            self.y_offset = 0.5
         if "l" in value:
-            self.x_offset=0
+            self.x_offset = 0
         elif "i" in value:
-            self.x_offset=1
+            self.x_offset = 1
         if "B" in value:
-            self.y_offset=1
+            self.y_offset = 1
         elif "p" in value:
-            self.y_offset=0
+            self.y_offset = 0
         self.setLayerTransform()
+
 
 # ============================================================================
 # Curved Text Layer (曲線文字圖層)
@@ -940,7 +1051,7 @@ LAYER_CLASS_MAP = {
 }
 
 
-def create_layer(layer_type: str, signal_dict: dict,id:int, parent=None):
+def create_layer(layer_type: str, signal_dict: dict, id: int, parent=None):
     """根據圖層類型創建對應的圖層實例"""
     layer_class = LAYER_CLASS_MAP.get(layer_type, textLayer)
-    return layer_class(signal_dict,id, parent)
+    return layer_class(signal_dict, id, parent)

@@ -293,6 +293,8 @@ class AttributeForm(QScrollArea):
                     value = bool(value)
                 elif isinstance(self.attr_type, tuple) and self.attr_type[2] == 1:
                     value = float(value)
+                    value = min(value, self.attr_type[1])
+                    value = max(value, self.attr_type[0])
                     value = int(value)
                 elif isinstance(self.attr_type, tuple) and self.attr_type[2] == 0:
                     value = float(value)
@@ -624,16 +626,20 @@ class AddWidget(QUndoCommand):
         self.target=target
         self.hash_id=id
         self.switch=switch
+        self.cancel=False
 
     def redo(self):
         super(AttributePanal,self.target).addWidget(self.widget,self.hash_id,self.switch)
+        self.cancel=False
 
     def undo(self):
         if self.switch:
             self.target.go_back()
             if self.target.currentWidget() is self.widget:
                 self.target.go_back()
+        self.cancel=True
 
     def __del__(self):
-        self.target.removeWidget(self.widget)
-        self.widget.deleteLater()
+        if self.cancel:
+            self.target.removeWidget(self.widget)
+            self.widget.deleteLater()
