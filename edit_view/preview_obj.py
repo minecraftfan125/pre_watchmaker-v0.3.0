@@ -405,13 +405,17 @@ class RotateHandle(QGraphicsEllipseItem):
             start_diff = self.scenePos() - center
             self.start_angle = math.degrees(math.atan2(start_diff.y(), start_diff.x()))
             self.radius = math.hypot(start_diff.x(), start_diff.y())
+            # 紀錄圖層當前的旋轉值，作為基礎
+            self.initial_layer_rotation = self.parent.rotation()
 
-        # 4. 計算旋轉增量 (滑鼠轉了幾度)
+        # 計算旋轉增量 (滑鼠轉了幾度)
         delta_angle = current_mouse_angle - self.start_angle
         
-        self.method(current_mouse_angle+90) 
+        # 更新圖層：原始角度 + 增量
+        new_rotation = self.initial_layer_rotation + delta_angle
+        self.method(new_rotation) 
 
-        # 6. 更新 Pie Chart
+        # 更新 Pie Chart
         if self.pie_chart:
             self.scene().removeItem(self.pie_chart)
 
@@ -432,6 +436,14 @@ class RotateHandle(QGraphicsEllipseItem):
         self.pie_chart.setStartAngle(int(-self.start_angle * 16))
         self.pie_chart.setSpanAngle(int(-delta_angle * 16))
 
+    def mouseReleaseEvent(self, event):
+        super().mouseReleaseEvent(event)
+        self.parent.selected = False
+        self.radius = None
+        self.start_angle = None
+        if self.pie_chart:
+            self.scene().removeItem(self.pie_chart)
+            self.pie_chart = None
 
 
 class ScaleHandle(QGraphicsRectItem):
