@@ -2,6 +2,7 @@ import os
 import re
 import math
 from PyQt5.QtWidgets import (
+    QApplication,
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
@@ -66,6 +67,30 @@ from common import FlowLayout, StackWidget, FontManager
 import components
 import numpy as np
 
+_ANGLE_CURSORS = [
+    (  0.0, Qt.SizeHorCursor),        # ←→  East / West
+    ( 45.0, Qt.SizeBDiagCursor),      # ↙↗  NE  / SW
+    ( 90.0, Qt.SizeVerCursor),        # ↑↓  North / South
+    (135.0, Qt.SizeFDiagCursor),      # ↖↘  NW  / SE
+]
+
+
+def _cursor_for_angle(deg: float) -> Qt.CursorShape:
+    """
+    Map an arbitrary angle (degrees, 0 = right, CW-positive) to the closest
+    resize cursor.  Because each cursor represents two opposite directions the
+    effective period is 180°, so we fold into [0, 180) first.
+    """
+    deg = deg % 180.0          # fold: NW↔SE share one cursor, etc.
+    best_cursor = Qt.SizeHorCursor
+    best_dist = 360.0
+    for base_angle, cursor in _ANGLE_CURSORS:
+        dist = abs(deg - base_angle)
+        dist = min(dist, 180.0 - dist)   # wrap-around distance inside [0,180)
+        if dist < best_dist:
+            best_dist = dist
+            best_cursor = cursor
+    return best_cursor
 
 # comunicate obj
 class Signal(QObject):
@@ -269,7 +294,7 @@ class SelectionBox(QGraphicsRectItem):
 
         scale_method = getattr(self.parent, "set_scale", False)
         if scale_method:
-            self.scale_handle = ScaleHandle.create_Handle(self)
+            self.scale_handle = ScaleHandle.create_Handle(scale_method,self)
             self.scale_handle.setZValue(1)
             self.setFlag(QGraphicsItem.ItemSendsGeometryChanges)
 
@@ -299,16 +324,28 @@ class SelectionBox(QGraphicsRectItem):
         rect.moveTo(-rect.width() / 2, -rect.height() / 2)
         self.setRect(rect)
         if self.alignment:
+            pb_rect=self.parent.boundingRect()
             x_offset=self.parent.x_offset
             y_offset=self.parent.y_offset
-            align_dx = rect.width() * x_offset
-            align_dy = rect.height() * y_offset
-            self.setTransformOriginPoint(align_dx, align_dy)
+            align_dx = pb_rect.width() * x_offset
+            align_dy = pb_rect.height() * y_offset
+            self.setTransformOriginPoint(align_dx,align_dy)
         self.setRotation(parent_rotate)
         self.update_child_state(x_offset,y_offset)
         self.parent.rotate(parent_rotate)
         self.parent.setLayerTransform()
         self.updating = False
+
+    def set_scale(self,direction: str, delta: QPointF):
+        app = QApplication.instance()
+        if app is None:
+            raise RuntimeError("Please create a QApplication instance first.")
+        screen = app.primaryScreen()
+        dpi = screen.logicalDotsPerInch()  # 取得邏輯 DPI（通常 96 或 144 等）
+
+        # pt → px 公式: px = pt * dpi / 72
+        # 反推: pt = px * 72 / dpi
+        point_size = delta * 72.0 / dpi
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Control:
@@ -447,7 +484,7 @@ class RotateHandle(QGraphicsEllipseItem):
 
 
 class ScaleHandle(QGraphicsRectItem):
-    _direction = {
+    handle_direction = {
         "tl": (-0.5, -0.5),
         "tc": (0.0, -0.5),
         "tr": (0.5, -0.5),
@@ -458,11 +495,16 @@ class ScaleHandle(QGraphicsRectItem):
         "br": (0.5, 0.5),
     }
 
-    def __init__(self, direction, parent: SelectionBox):
+    def __init__(self, direction, method, parent: SelectionBox):
         super().__init__(QRectF(-5, -5, 10, 10), parent)
         self.setBrush(QBrush(QColor(100, 180, 255)))
         self.setPen(QPen(Qt.white, 1))
         self.direction = direction
+        self.set_scale=method
+        self.setAcceptHoverEvents(True)
+        self.setFlag(QGraphicsRectItem.ItemIsMovable, False)
+
+        self._drag_start_scene: QPointF | None = None
 
     def update_transform(self):
         p = self.parentItem()  # SelectionBox
@@ -499,23 +541,84 @@ class ScaleHandle(QGraphicsRectItem):
         self.setTransform(t)
 
     def update_pos(self, w, h):
-        x = self._direction[self.direction][0] * w
-        y = self._direction[self.direction][1] * h
+        x = self.handle_direction[self.direction][0] * w
+        y = self.handle_direction[self.direction][1] * h
         self.setPos(x, y)
 
+    def _compute_cursor(self) -> Qt.CursorShape:
+        """
+        Rotate the handle's nominal direction vector by the parent's current
+        scene rotation, then choose the closest resize cursor.
+        """
+        dx, dy = self.handle_direction[self.direction]
+
+        # For center-edge handles (dx or dy == 0) use the non-zero axis.
+        # atan2(y, x) gives angle in radians, 0 = East, CCW-positive in math
+        # but Qt's rotation is CW-positive, so we negate dy to convert.
+        raw_angle_rad = math.atan2(-dy, dx)   # CW-positive, 0 = East
+        raw_angle_deg = math.degrees(raw_angle_rad)
+
+        # Add parent's visual rotation (scene transform)
+        parent = self.parentItem()
+        if parent:
+            scene_t  = parent.sceneTransform()
+            # Extract rotation from the scene transform matrix
+            parent_angle_deg = math.degrees(
+                math.atan2(-scene_t.m12(), scene_t.m11())
+            )
+        else:
+            parent_angle_deg = 0.0
+
+        final_angle = raw_angle_deg + parent_angle_deg
+        return _cursor_for_angle(final_angle)
+
+    def hoverEnterEvent(self, event):
+        self.setCursor(QCursor(self._compute_cursor()))
+        super().hoverEnterEvent(event)
+
+    def hoverMoveEvent(self, event):
+        # Re-evaluate in case the parent was rotated while hovering
+        self.setCursor(QCursor(self._compute_cursor()))
+        super().hoverMoveEvent(event)
+
+    def hoverLeaveEvent(self, event):
+        self.unsetCursor()
+        super().hoverLeaveEvent(event)
+
     def mousePressEvent(self, event):
-        print("slc", self.direction)
-        super().mousePressEvent(event)
-        event.accept()
+        if event.button() == Qt.LeftButton:
+            self._drag_start_scene = event.scenePos()
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._drag_start_scene is not None:
+            delta = event.scenePos() - self._drag_start_scene
+            # Pass the direction key and the scene-space delta to the callback.
+            # Signature: set_scale(direction: str, delta: QPointF)
+            self.set_scale(self.direction, delta)
+            # Update the drag origin so deltas are incremental, not cumulative.
+            self._drag_start_scene = event.scenePos()
+            event.accept()
+        else:
+            super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._drag_start_scene = None
+            event.accept()
+        else:
+            super().mouseReleaseEvent(event)
 
     @classmethod
-    def create_Handle(cls, parent):
+    def create_Handle(cls, method, parent):
         handles = {}
         w, h = parent.boundingRect().width(), parent.boundingRect().height()
-        for direction in cls._direction:
-            handle = cls(direction, parent)
-            x = cls._direction[direction][0] * w
-            y = cls._direction[direction][1] * h
+        for direction in cls.handle_direction:
+            handle = cls(direction, method, parent)
+            x = cls.handle_direction[direction][0] * w
+            y = cls.handle_direction[direction][1] * h
             handle.setPos(x, y)
             handles[direction] = handle
         return BatchProcessContainer(handles)
@@ -769,9 +872,79 @@ class textLayer(Component, QGraphicsTextItem):
         self.attribute["X"].emit(x + align_dx)
         self.attribute["Y"].emit(y + align_dy)
 
-    def set_scale(self):
-        pass
+    def set_scale(self, direction: str, delta: QPointF):
+        scene_t = self.sceneTransform()
+        rot_scale = QTransform(
+            scene_t.m11(), scene_t.m12(),
+            scene_t.m21(), scene_t.m22(),
+            0.0, 0.0
+        )
+        inv, invertible = rot_scale.inverted()
+        if not invertible:
+            return
 
+        local_delta = inv.map(delta)
+        dx = local_delta.x()
+        dy = local_delta.y()
+
+        sign_x, sign_y = ScaleHandle.handle_direction[direction]
+
+        active_axes = (1 if sign_x != 0.0 else 0) + (1 if sign_y != 0.0 else 0)
+        if active_axes == 0:
+            return
+
+        is_corner = (sign_x != 0.0) and (sign_y != 0.0)
+
+        if is_corner:
+            effective_delta = dy * sign_y * 2.0
+        else:
+            effective_delta = (dx * sign_x + dy * sign_y) * 2.0 / active_axes
+        rect = self.boundingRect()
+        current_height   = rect.height()-2
+        current_font_size = self.font().pointSize()
+
+        print(current_font_size)
+
+        if current_height <= 0 or current_font_size <= 0:
+            return
+
+        size_ratio    = current_font_size / current_height
+        new_font_size = max(1, round((current_height + effective_delta) * size_ratio))
+
+        if new_font_size == current_font_size:
+            return
+
+        if is_corner:
+            anchor_local = QPointF(
+                0.5 * rect.width(),
+                (0.5 - sign_y) * rect.height()
+            )
+        else:
+            anchor_local = QPointF(
+                (0.5 - sign_x) * rect.width(),
+                (0.5 - sign_y) * rect.height()
+            )
+        anchor_scene = self.mapToScene(anchor_local)
+
+        self.attribute["Text size"].emit(new_font_size)
+
+        new_rect = self.boundingRect()
+        if is_corner:
+            new_anchor_local = QPointF(
+                0.5 * new_rect.width(),
+                (0.5 - sign_y) * new_rect.height()
+            )
+        else:
+            new_anchor_local = QPointF(
+                (0.5 - sign_x) * new_rect.width(),
+                (0.5 - sign_y) * new_rect.height()
+            )
+        drifted_anchor_scene = self.mapToScene(new_anchor_local)
+
+        correction = anchor_scene - drifted_anchor_scene
+        if correction.manhattanLength() > 0.01:
+            self.attribute["X"].emit(self.x() + correction.x())
+            self.attribute["Y"].emit(self.y() + correction.y())
 
 # ============================================================================
 # Image Layer (圖片圖層)
