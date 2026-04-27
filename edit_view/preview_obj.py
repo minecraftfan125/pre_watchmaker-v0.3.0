@@ -301,9 +301,9 @@ class SelectionBox(QGraphicsRectItem):
         if hasattr(self.parent, "setAlignment"):
             self.alignment = True
 
-    def update_child_state(self, x_offset,y_offset):
+    def update_child_state(self):
         self.scale_handle.update_pos(self.rect().width(), self.rect().height())
-        self.rotate.update_pos(x_offset,y_offset)
+        self.rotate.update_pos(self.parent.x_offset,self.parent.y_offset)
         self.scale_handle.update_transform()
 
     # ▼ 新增這個方法：動態計算控制點位置，抵消父元件縮放
@@ -331,7 +331,7 @@ class SelectionBox(QGraphicsRectItem):
             align_dy = pb_rect.height() * y_offset
             self.setTransformOriginPoint(align_dx,align_dy)
         self.setRotation(parent_rotate)
-        self.update_child_state(x_offset,y_offset)
+        self.update_child_state()
         self.parent.rotate(parent_rotate)
         self.parent.setLayerTransform()
         self.updating = False
@@ -382,7 +382,6 @@ class SelectionBox(QGraphicsRectItem):
 
     def itemChange(self, change, value):
         if (change == QGraphicsItem.ItemVisibleChange) and value:
-            print("show", self.rect(), value)
             self.update_scale()
         return super().itemChange(change, value)
 
@@ -702,10 +701,6 @@ class Component:
     def skew_y(self, value):
         self.skew_y_value = value
 
-    def shear(self, matrix, sx, sy):
-        matrix.shear(-sx, -sy)
-        return matrix
-
     def rotate(self, value):
         self.rotate_value = value
 
@@ -752,8 +747,8 @@ class Component:
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.ItemSelectedChange:
-            print(self, "select")
             self.controller.setVisible(bool(value) or self.controller.selected)
+
         if change == QGraphicsItem.ItemSceneChange:
             if value:
                 value.addItem(self.controller)
@@ -872,79 +867,62 @@ class textLayer(Component, QGraphicsTextItem):
         self.attribute["X"].emit(x + align_dx)
         self.attribute["Y"].emit(y + align_dy)
 
-    def set_scale(self, direction: str, delta: QPointF):
-        scene_t = self.sceneTransform()
-        rot_scale = QTransform(
-            scene_t.m11(), scene_t.m12(),
-            scene_t.m21(), scene_t.m22(),
-            0.0, 0.0
-        )
-        inv, invertible = rot_scale.inverted()
-        if not invertible:
+    def set_scale(self, direction, delta):
+        rect = self.controller.boundingRect()
+        W = rect.width()+math.tan(-self.skew_x_value)
+        H = rect.height()+math.tan(-self.skew_y_value)
+        if W <= 0 or H <= 0:
             return
+        current_size = self.font().pointSize()
+        if current_size <= 0:
+            current_size = 12
 
-        local_delta = inv.map(delta)
-        dx = local_delta.x()
-        dy = local_delta.y()
+        hx, hy = ScaleHandle.handle_direction[direction]
 
-        sign_x, sign_y = ScaleHandle.handle_direction[direction]
+        # Project scene delta onto item's local axes (inverse of CW rotation by rotate_value)
+        theta = math.radians(self.rotate_value)
+        cos_t = math.cos(theta)
+        sin_t = math.sin(theta)
+        d_local_x =  delta.x() * cos_t + delta.y() * sin_t
+        d_local_y = -delta.x() * sin_t + delta.y() * cos_t
 
-        active_axes = (1 if sign_x != 0.0 else 0) + (1 if sign_y != 0.0 else 0)
-        if active_axes == 0:
-            return
-
-        is_corner = (sign_x != 0.0) and (sign_y != 0.0)
-
-        if is_corner:
-            effective_delta = dy * sign_y * 2.0
+        # Corner and vertical handles: use local Y ("頂線/底線為基準")
+        # Horizontal-only handles (cl, cr): use local X then convert via aspect ratio
+        if hy != 0:
+            d_eff = d_local_y * (1 if hy > 0 else -1)
+            ref_dim = H
         else:
-            effective_delta = (dx * sign_x + dy * sign_y) * 2.0 / active_axes
-        rect = self.boundingRect()
-        current_height   = rect.height()-2
-        current_font_size = self.font().pointSize()
+            d_eff = d_local_x * (1 if hx > 0 else -1)
+            ref_dim = W
 
-        print(current_font_size)
+        delta_size = d_eff * current_size / ref_dim
 
-        if current_height <= 0 or current_font_size <= 0:
-            return
+        # Float accumulator avoids stalling at integer boundaries
+        if not hasattr(self, '_scale_size') or abs(self._scale_size - current_size) > 1.0:
+            self._scale_size = float(current_size)
+        self._scale_size = max(1.0, self._scale_size + delta_size)
 
-        size_ratio    = current_font_size / current_height
-        new_font_size = max(1, round((current_height + effective_delta) * size_ratio))
+        actual_new = max(1, int(self._scale_size))
+        if actual_new == current_size:
+            return  # sub-integer change; accumulate only, no emit to avoid drift
 
-        if new_font_size == current_font_size:
-            return
+        s = actual_new / current_size
+        dW = W * (s - 1)
+        dH = H * (s - 1)
 
-        if is_corner:
-            anchor_local = QPointF(
-                0.5 * rect.width(),
-                (0.5 - sign_y) * rect.height()
-            )
-        else:
-            anchor_local = QPointF(
-                (0.5 - sign_x) * rect.width(),
-                (0.5 - sign_y) * rect.height()
-            )
-        anchor_scene = self.mapToScene(anchor_local)
+        # Keep the fixed point (opposite handle) in place.
+        # In pre-rotation local space: delta_anchor = (x_offset + hx)*dW, (y_offset + hy)*dH
+        # Then rotate to scene space via Qt CW rotation: R*(x,y) = (x*cos-y*sin, x*sin+y*cos)
+        local_dpx = (self.x_offset + hx) * dW
+        local_dpy = (self.y_offset + hy) * dH
+        scene_dpx = local_dpx * cos_t - local_dpy * sin_t
+        scene_dpy = local_dpx * sin_t + local_dpy * cos_t
 
-        self.attribute["Text size"].emit(new_font_size)
+        self.attribute["Text size"].emit(actual_new)
+        self.attribute["X"].emit(self.x() + scene_dpx)
+        self.attribute["Y"].emit(self.y() + scene_dpy)
+        self.controller.update_scale()
 
-        new_rect = self.boundingRect()
-        if is_corner:
-            new_anchor_local = QPointF(
-                0.5 * new_rect.width(),
-                (0.5 - sign_y) * new_rect.height()
-            )
-        else:
-            new_anchor_local = QPointF(
-                (0.5 - sign_x) * new_rect.width(),
-                (0.5 - sign_y) * new_rect.height()
-            )
-        drifted_anchor_scene = self.mapToScene(new_anchor_local)
-
-        correction = anchor_scene - drifted_anchor_scene
-        if correction.manhattanLength() > 0.01:
-            self.attribute["X"].emit(self.x() + correction.x())
-            self.attribute["Y"].emit(self.y() + correction.y())
 
 # ============================================================================
 # Image Layer (圖片圖層)
