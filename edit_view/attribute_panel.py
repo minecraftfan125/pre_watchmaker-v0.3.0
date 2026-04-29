@@ -34,12 +34,15 @@ class ContainerValueChange(QUndoCommand):
         self.container = container
         self.new_value = new_value
         self.old_value = old_value
+        if new_value==old_value:
+            self.setObsolete(True)
 
     def redo(self):
-        self.container.set_value(self.new_value,False)
+        self.container.set_value(self.new_value)
 
     def undo(self):
-        self.container.set_value(self.old_value,False)
+        print("undo")
+        self.container.set_value(self.old_value)
 
     def __del__(self):
         pass
@@ -59,6 +62,7 @@ class AttributeForm(QScrollArea):
             super().__init__(parent)
             self.name = title
             self.attr_type = typ
+            self.convert=str
             self.default = value
             self.description = description
             self.options = typ
@@ -73,25 +77,29 @@ class AttributeForm(QScrollArea):
             self.left.setObjectName("attrLabel")
 
             self.right=QWidget()
-            self.signal.connect(self.set_value)
+            self.signal.connect(self.outside_input)
             if self.attr_type == "color":
                 self._create_color_ui()
             elif self.attr_type == "widget":
                 self._create_widget_ui()
             elif self.attr_type == "bool":
+                self.convert==bool
                 self._create_bool_ui()
             elif self.attr_type == "file":
                 self._create_file_ui()
             elif self.attr_type == "font" or isinstance(self.attr_type, list):
                 self._create_option_ui()
             elif isinstance(self.attr_type, tuple) and self.attr_type[2] == 1:
+                self.convert=int
                 self._create_int_ui()
             elif isinstance(self.attr_type, tuple) and self.attr_type[2] == 0:
+                self.convert=float
                 self._create_num_ui()
             else:
                 self._create_str_ui()
 
             self.right.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            self.signal.emit(self._value)
             if len(self.name) <= 8:
                 self.left.setFixedWidth(80)
                 self.row_layout = QHBoxLayout(self)
@@ -113,27 +121,22 @@ class AttributeForm(QScrollArea):
             right_layout = QHBoxLayout(self.right)
             right_layout.setContentsMargins(0, 0, 0, 0)
             right_layout.setSpacing(4)
-            self.input = QLineEdit()
+            self.input = QLineEdit(self.default)
             right_layout.addWidget(self.input)
             self.input.setObjectName("attrInput")
-            if self.name != "Name":
-                self.input.textChanged.connect(self.value_processing)
-            self.input.editingFinished.connect(
-                lambda: self.value_processing(self.input.text())
-            )
-            self.input.setText(str(self.default))
-            self.signal.emit(self.input.text())
+            self.input.textEdited.connect(self.user_input)
+            self.input.editingFinished.connect(lambda :self.user_input(self.input.text(),True))
             self.input.setAcceptDrops(False)
 
         def _create_int_ui(self):
             right_layout = QHBoxLayout(self.right)
             right_layout.setContentsMargins(0, 0, 0, 0)
             right_layout.setSpacing(4)
-            self.input = QLineEdit()
+            self.input = QLineEdit(str(self.default))
             self.input.setObjectName("attrInput")
             right_layout.addWidget(self.input)
-            self.input.textChanged.connect(self.value_processing)
-            self.input.setText(str(self.default))
+            self.input.textEdited.connect(self.user_input)
+            self.input.editingFinished.connect(lambda:self.user_input(self.input.text(),True))
             self.input.setAcceptDrops(False)
 
         def _create_num_ui(self):
@@ -144,10 +147,8 @@ class AttributeForm(QScrollArea):
             self.input = QLineEdit()
             self.input.setObjectName("attrInput")
             
-            self.input.textChanged.connect(self.value_processing)
-            self.input.editingFinished.connect(
-                lambda: self.value_processing(self.input.text())
-            )
+            self.input.textEdited.connect(self.user_input)
+            self.input.editingFinished.connect(lambda:self.user_input(self.input.text(),True))
             self.input.setText(str(self.default))
             self.input.setAcceptDrops(False)
             right_layout.addWidget(self.input,1)
@@ -172,7 +173,7 @@ class AttributeForm(QScrollArea):
             self.input.setObjectName("attrCombo")
             self.input.addItems([str(opt) for opt in self.options])
             index = self.input.findText(str(self.default))
-            self.input.currentTextChanged.connect(lambda value:self.value_processing(value))
+            self.input.currentTextChanged.connect(lambda :self.user_input(self.input.currentText(),True))
             if index >= 0:
                 self.input.setCurrentIndex(index)
                 self.signal.emit(str(self.default))
@@ -186,19 +187,13 @@ class AttributeForm(QScrollArea):
             self.color_btn = QPushButton()
             self.color_btn.setObjectName("colorButton")
             self.color_btn.setFixedSize(50, 25)
-            self._current_color = (
-                QColor(f"#{self.default}") if self.default else QColor("#ffffff")
-            )
-            self._update_color_button()
+            self._update_color_button(QColor(f"#{self.default}") if self.default else QColor("#ffffff"))
             self.color_btn.clicked.connect(self._on_color_clicked)
             right_layout.addWidget(self.color_btn)
 
             self.input = QLineEdit()
             self.input.setObjectName("attrInput")
-            self.input.textChanged.connect(self._on_color_text_changed)
-            self.input.editingFinished.connect(
-                lambda: self.value_processing(self.input.text())
-            )
+            self.input.editingFinished.connect(self._on_color_text_changed)
             self.input.setText(str(self.default))
             self.input.setAcceptDrops(False)
             right_layout.addWidget(self.input, 1)
@@ -220,7 +215,7 @@ class AttributeForm(QScrollArea):
             self.input = QRadioButton()
             right_layout.addWidget(self.input)
             self.input.setObjectName("attrCombo")
-            self.input.clicked.connect(lambda value:self.value_processing(value))
+            self.input.clicked.connect(lambda value:self.user_input(value,True))
             self.input.setChecked(self.default)
 
         def _create_file_ui(self):
@@ -251,103 +246,92 @@ class AttributeForm(QScrollArea):
                 "All Files (*);;Images (*.png *.jpg *.jpeg *.gif *.bmp);;3D Models (*.obj *.gltf *.glb)",
             )
             if file_path:
-                self._value = file_path
+                self.user_input(file_path,True)
                 self.default = file_path
                 self._update_file_button_text()
                 self.value_changed.emit(file_path)
-                self.value_processing(file_path)
-
-        def _update_color_button(self):
+                
+        def _update_color_button(self,color):
             self.color_btn.setStyleSheet(
-                f"background-color: {self._current_color.name()}; border: 1px solid #4d4d4d;"
+                f"background-color: {color.name()}; border: 1px solid #4d4d4d;"
             )
 
         def _on_color_clicked(self):
-            color = QColorDialog.getColor(self._current_color, self, "choose color")
+            color = QColorDialog.getColor(QColor("#"+self._value), self, "choose color")
             if color.isValid():
-                self._current_color = color
                 hex_color = color.name()[1:]
                 self.input.setText(hex_color)
-                self._value = hex_color
+                self.user_input(hex_color,True)
+                self._update_color_button(color)
 
         def _on_color_text_changed(self, text):
             try:
                 color = QColor(f"#{text}" if not text.startswith("#") else text)
                 if color.isValid():
-                    self.value_processing(text if not text.startswith("#") else text[1:])
-                    self._current_color = color
-                    self._update_color_button()
+                    self._update_color_button(color)
+                    self.user_input(color.name()[1:],True)
+                    self._value = color.name()[1:]
             except:
-                pass
+                self._on_color_text_changed(self._value)
 
         def get_value(self):
             return self._value
+        
+        def user_input(self,value,edit_finish=False):
+            update_stack,value=self.value_processing(value)
+            print(update_stack,value)
+            self.edit_finish=edit_finish
+            if update_stack:
+                self.signal.emit(self.convert(value))
+            if edit_finish:
+                if update_stack:
+                    self.push_undo_command(value,self._value)
+                self.set_value(value,False)
 
-        def value_processing(self, value, edit_finish=None):
-            if isinstance(self.input,QLineEdit):
-                self.edit_finish=not self.input.hasFocus()
-            if edit_finish is not None:
-                self.edit_finish=edit_finish
-            try:
-                if self.attr_type == "bool":
-                    value = bool(value)
-                elif isinstance(self.attr_type, tuple) and self.attr_type[2] == 1:
-                    value = float(value)
-                    value = min(value, self.attr_type[1])
-                    value = max(value, self.attr_type[0])
-                    value = int(value)
-                elif isinstance(self.attr_type, tuple) and self.attr_type[2] == 0:
-                    value = float(value)
-                    if self.name == "Rotation":
-                        value = value % 360
-                    value = min(value, self.attr_type[1])
-                    value = max(value, self.attr_type[0])
-                    value = float(value)
-                else:
-                    value = str(value)
-                self.signal.emit(value)
-            except:
-                if self.edit_finish:
-                    self.set_value(self._value)
-
-        def is_valid(self, value):
-            if isinstance(self.attr_type, tuple):
-                try:
-                    value=float(value)
-                    text=re.sub(r"(\.\d*?[1-9])0+$|\.0+(?!\d)$","",str(value))
-                    if text==self.input.text():                                                                                                                                                                                                                                                                                                                                                                                                                                                                        
-                        return self._value
-                    return text
-                except:
-                    return self._value
-            if value==self._value:
-                return self._value
-            return value
-            
-        def set_value(self, value, push_undo_command=True):
-            text=self.is_valid(value)
-            if (not self.edit_finish) or (self._value == text):
+        def outside_input(self,value,edit_finish=False):
+            tmp=self._value
+            self.set_value(value)
+            if edit_finish:
+                self.push_undo_command(value,tmp)
                 return
-            if push_undo_command:
-                self.push_undo_command(value,self._value)
+            self._value=tmp
+
+        def value_processing(self, value):
+            try:
+                value = self.convert(value)
+                if isinstance(self.attr_type, tuple):
+                    value = min(value, self.attr_type[1])
+                    value = max(value, self.attr_type[0])
+                return True,value
+            except:
+                return False,self._value
+            
+        def set_value(self, value, omit=True):
+            if not self.edit_finish:
+                return
             self._value = value
             if self.attr_type == "bool":
                 self.input.setChecked(value)
                 return
             if isinstance(self.attr_type, list) or self.attr_type == "font":
-                index = self.input.findText(text)
+                index = self.input.findText(str(value))
                 if index >= 0:
                     self.input.setCurrentIndex(index)
             elif self.attr_type == "widget": self._value=None
             elif self.attr_type == "file": self._update_file_button_text()
-            else: self.input.setText(text)
+            else:
+                try:
+                    float(self._value)
+                    value=f"{round(value, 3):g}"
+                except: pass
+                self.input.setText(str(value))
 
         def set_undo_stack(self,stack):
             self.undo_stack=stack
 
         def push_undo_command(self,value,old_value):
             command=ContainerValueChange(self,value,old_value)
-            try: 
+            try:
                 self.undo_stack.push(command)
             except: pass
 
