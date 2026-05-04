@@ -97,6 +97,7 @@ class Signal(QObject):
     thisF = pyqtSignal(float)
     thisS = pyqtSignal(str)
     thisB = pyqtSignal(bool)
+    finish= pyqtSignal()
 
     def __init__(self, parent=None):
         self._emit = None
@@ -126,6 +127,10 @@ class Signal(QObject):
                 self.thisS.emit(value)
             except:
                 pass
+
+    def edit_finish(self,value=True):
+        if value:
+            self.finish.emit()
 
 
 class OrderlyTransform(QTransform):
@@ -294,7 +299,8 @@ class SelectionBox(QGraphicsRectItem):
 
         scale_method = getattr(self.parent, "set_scale", False)
         if scale_method:
-            self.scale_handle = ScaleHandle.create_Handle(scale_method,self)
+            finish_scale = getattr(self.parent, "finish_scale", None)
+            self.scale_handle = ScaleHandle.create_Handle(scale_method, self, finish_scale)
             self.scale_handle.setZValue(1)
             self.setFlag(QGraphicsItem.ItemSendsGeometryChanges)
 
@@ -379,6 +385,10 @@ class SelectionBox(QGraphicsRectItem):
     def mouseReleaseEvent(self, event):
         super().mouseReleaseEvent(event)
         self.selected = False
+        if "X" in self.parent.attribute and "Y" in self.parent.attribute:
+            self.parent.attribute["X"].edit_finish()
+            self.parent.attribute["Y"].edit_finish()
+            self.parent.set_pos(self.parent.x(), self.parent.y())
 
     def itemChange(self, change, value):
         if (change == QGraphicsItem.ItemVisibleChange) and value:
@@ -475,6 +485,11 @@ class RotateHandle(QGraphicsEllipseItem):
     def mouseReleaseEvent(self, event):
         super().mouseReleaseEvent(event)
         self.parent.selected = False
+        if self.radius is not None:
+            component = self.parent.parent
+            if hasattr(component, "attribute") and "Rotation" in component.attribute:
+                component.attribute["Rotation"].edit_finish()
+                component.set_rotate(component.rotate_value)
         self.radius = None
         self.start_angle = None
         if self.pie_chart:
@@ -494,12 +509,13 @@ class ScaleHandle(QGraphicsRectItem):
         "br": (0.5, 0.5),
     }
 
-    def __init__(self, direction, method, parent: SelectionBox):
+    def __init__(self, direction, method, parent: SelectionBox, finish_method=None):
         super().__init__(QRectF(-5, -5, 10, 10), parent)
         self.setBrush(QBrush(QColor(100, 180, 255)))
         self.setPen(QPen(Qt.white, 1))
         self.direction = direction
         self.set_scale=method
+        self.finish_method = finish_method
         self.setAcceptHoverEvents(True)
         self.setFlag(QGraphicsRectItem.ItemIsMovable, False)
 
@@ -605,17 +621,19 @@ class ScaleHandle(QGraphicsRectItem):
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
+            if self._drag_start_scene is not None and self.finish_method is not None:
+                self.finish_method()
             self._drag_start_scene = None
             event.accept()
         else:
             super().mouseReleaseEvent(event)
 
     @classmethod
-    def create_Handle(cls, method, parent):
+    def create_Handle(cls, method, parent, finish_method=None):
         handles = {}
         w, h = parent.boundingRect().width(), parent.boundingRect().height()
         for direction in cls.handle_direction:
-            handle = cls(direction, method, parent)
+            handle = cls(direction, method, parent, finish_method)
             x = cls.handle_direction[direction][0] * w
             y = cls.handle_direction[direction][1] * h
             handle.setPos(x, y)

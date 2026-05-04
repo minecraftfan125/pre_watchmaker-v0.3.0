@@ -47,6 +47,7 @@ class ExplororItem(QTreeWidgetItem):
             self.signals.name_collision.emit(name, self.name)
         else:
             self.name = name
+            self.name_signal.edit_finish()
             self.name_signal.emit(name)
 
     def change_z_order(self, value):
@@ -84,6 +85,7 @@ class ExplororTree(QTreeWidget):
         self.setSortingEnabled(True)
         self.item_level = {}
         self.item_name = []
+        self.undo_stack = None
 
     def add_item(self, item: ExplororItem):
         self.setCurrentItem(item)
@@ -103,6 +105,11 @@ class ExplororTree(QTreeWidget):
             while new_name in self.item_name:
                 new_name = base_name + " " + str(counter)
                 counter += 1
+            if self.undo_stack is not None:
+                try:
+                    self.undo_stack.undo()
+                except Exception:
+                    pass
             self.item_name.append(new_name)
             item.rename(new_name, False)
             return
@@ -182,6 +189,8 @@ class ExplororTree(QTreeWidget):
             self.reference_item.addChild(item)
         else:
             tmp = self.reference_item.level
+            self.reference_item.level_signal.edit_finish()
+            item.level_signal.edit_finish()
             self.reference_item.change_z_order(item.level)
             item.change_z_order(tmp)
         self.sortItems(0, Qt.AscendingOrder)
@@ -197,7 +206,7 @@ class Exploror(QWidget):
     cut = pyqtSignal(int)
     delete = pyqtSignal(int)
 
-    def __init__(self, data=None, id_stack=None, signal=None, parent=None):
+    def __init__(self, undo_stack=None, id_stack=None, signal=None, parent=None):
         super().__init__(parent)
         self.setObjectName("explorer")
         self.setMaximumWidth(314)
@@ -215,6 +224,7 @@ class Exploror(QWidget):
         hlayout.addWidget(self.sort_option, 3)
         self._vlayout.addLayout(hlayout, 1)
         self.tree = ExplororTree(self)
+        self.tree.undo_stack = undo_stack
         self._vlayout.addWidget(self.tree, 19)
         self.override = OverrideWidget(
             "drop here\nadd new item", "img/edit/exp_drag.png", self

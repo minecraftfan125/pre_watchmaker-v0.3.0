@@ -58,7 +58,7 @@ class AttributeForm(QScrollArea):
         open_script_editor = pyqtSignal(object)
         open_widget_editor = pyqtSignal()
 
-        def __init__(self, title, value, description, typ, signal:pyqtSignal, parent=None):
+        def __init__(self, title, value, description, typ, signal:preview_obj.Signal, parent=None):
             super().__init__(parent)
             self.name = title
             self.attr_type = typ
@@ -70,6 +70,7 @@ class AttributeForm(QScrollArea):
             self._value = self.default
             self.edit_finish=True
             self.undo_stack=None
+            self.signal.finish.connect(self.finish)
             self._create_ui()
 
         def _create_ui(self):
@@ -281,18 +282,26 @@ class AttributeForm(QScrollArea):
             update_stack,value=self.value_processing(value)
             print(update_stack,value)
             self.edit_finish=edit_finish
-            if update_stack:
+            if update_stack and self.name!="Name":
                 self.signal.emit(self.convert(value))
             if edit_finish:
-                if update_stack:
-                    self.push_undo_command(value,self._value)
+                old_value=self._value
                 self.set_value(value,False)
+                self.edit_finish=False
+                if update_stack:
+                    self.push_undo_command(value,old_value)
+                    if self.name=="Name":
+                        self.signal.emit(self.convert(value))
 
-        def outside_input(self,value,edit_finish=False):
+        def finish(self):
+            self.edit_finish=True
+
+        def outside_input(self,value):
             tmp=self._value
             self.set_value(value)
-            if edit_finish:
+            if self.edit_finish:
                 self.push_undo_command(value,tmp)
+                self.edit_finish=False
                 return
             self._value=tmp
 
@@ -307,8 +316,6 @@ class AttributeForm(QScrollArea):
                 return False,self._value
             
         def set_value(self, value, omit=True):
-            if not self.edit_finish:
-                return
             self._value = value
             if self.attr_type == "bool":
                 self.input.setChecked(value)
@@ -321,8 +328,9 @@ class AttributeForm(QScrollArea):
             elif self.attr_type == "file": self._update_file_button_text()
             else:
                 try:
-                    float(self._value)
-                    value=f"{round(value, 3):g}"
+                    if omit:
+                        float(self._value)
+                        value=f"{round(value, 3):g}"
                 except: pass
                 self.input.setText(str(value))
 
