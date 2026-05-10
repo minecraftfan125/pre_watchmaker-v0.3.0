@@ -31,6 +31,7 @@ class EditView(QWidget):
         self.setMouseTracking(True)
         self.setAcceptDrops(True)
         self.is_dragging = False
+        self._sync_guard = False
         self.id_stack = [2]
         self.set_ui()
         self.setStyleSheet(load_style())
@@ -72,6 +73,31 @@ class EditView(QWidget):
         self.attribute.request_script_editor.connect(
             lambda container: self.summon_script_view.emit(self, container)
         )
+        self.watch_preview.select.connect(self._on_preview_selected)
+        self.explorer.item_selected.connect(self._on_explorer_item_selected)
+
+    def _on_preview_selected(self, hash_id):
+        if self._sync_guard or hash_id is None:
+            return
+        self._sync_guard = True
+        try:
+            self.attribute.toggle_widget(hash_id)
+            self.explorer.select_item(hash_id)
+        finally:
+            self._sync_guard = False
+
+    def _on_explorer_item_selected(self, hash_id):
+        if self._sync_guard:
+            return
+        self._sync_guard = True
+        try:
+            self.attribute.toggle_widget(hash_id)
+            layer = self.watch_preview.hash_table.get(hash_id)
+            if layer:
+                self.watch_preview.sence.clearSelection()
+                layer.setSelected(True)
+        finally:
+            self._sync_guard = False
 
     def delete_component(self, obj):
         self.id_stack.append(obj.hash_id)

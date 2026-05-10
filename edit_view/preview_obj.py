@@ -1,6 +1,7 @@
 import os
 import re
 import math
+import functools
 from PyQt5.QtWidgets import (
     QApplication,
     QWidget,
@@ -97,6 +98,7 @@ class Signal(QObject):
     thisF = pyqtSignal(float)
     thisS = pyqtSignal(str)
     thisB = pyqtSignal(bool)
+    macro = pyqtSignal(bool)
     finish= pyqtSignal()
 
     def __init__(self, parent=None):
@@ -299,13 +301,15 @@ class SelectionBox(QGraphicsRectItem):
 
         scale_method = getattr(self.parent, "set_scale", False)
         if scale_method:
-            finish_scale = getattr(self.parent, "finish_scale", None)
-            self.scale_handle = ScaleHandle.create_Handle(scale_method, self, finish_scale)
+            self.scale_handle = ScaleHandle.create_Handle(scale_method, self)
             self.scale_handle.setZValue(1)
             self.setFlag(QGraphicsItem.ItemSendsGeometryChanges)
 
         if hasattr(self.parent, "setAlignment"):
             self.alignment = True
+
+    def edit_finish(self,*args):
+        self.parent.edit_finish(*args)
 
     def update_child_state(self):
         self.scale_handle.update_pos(self.rect().width(), self.rect().height())
@@ -386,9 +390,7 @@ class SelectionBox(QGraphicsRectItem):
         super().mouseReleaseEvent(event)
         self.selected = False
         if "X" in self.parent.attribute and "Y" in self.parent.attribute:
-            self.parent.attribute["X"].edit_finish()
-            self.parent.attribute["Y"].edit_finish()
-            self.parent.set_pos(self.parent.x(), self.parent.y())
+            self.parent.edit_finish(self.parent.set_pos,self.parent.x(), self.parent.y())
 
     def itemChange(self, change, value):
         if (change == QGraphicsItem.ItemVisibleChange) and value:
@@ -486,10 +488,7 @@ class RotateHandle(QGraphicsEllipseItem):
         super().mouseReleaseEvent(event)
         self.parent.selected = False
         if self.radius is not None:
-            component = self.parent.parent
-            if hasattr(component, "attribute") and "Rotation" in component.attribute:
-                component.attribute["Rotation"].edit_finish()
-                component.set_rotate(component.rotate_value)
+            self.parent.edit_finish(self.method,self.parent.rotation())
         self.radius = None
         self.start_angle = None
         if self.pie_chart:
@@ -509,13 +508,12 @@ class ScaleHandle(QGraphicsRectItem):
         "br": (0.5, 0.5),
     }
 
-    def __init__(self, direction, method, parent: SelectionBox, finish_method=None):
+    def __init__(self, direction, method, parent: SelectionBox):
         super().__init__(QRectF(-5, -5, 10, 10), parent)
         self.setBrush(QBrush(QColor(100, 180, 255)))
         self.setPen(QPen(Qt.white, 1))
         self.direction = direction
         self.set_scale=method
-        self.finish_method = finish_method
         self.setAcceptHoverEvents(True)
         self.setFlag(QGraphicsRectItem.ItemIsMovable, False)
 
@@ -621,19 +619,20 @@ class ScaleHandle(QGraphicsRectItem):
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
-            if self._drag_start_scene is not None and self.finish_method is not None:
-                self.finish_method()
+            if self._drag_start_scene is not None:
+                delta = event.scenePos() - self._drag_start_scene
+                self.parentItem().edit_finish(self.set_scale,self.direction, delta)
             self._drag_start_scene = None
             event.accept()
         else:
             super().mouseReleaseEvent(event)
 
     @classmethod
-    def create_Handle(cls, method, parent, finish_method=None):
+    def create_Handle(cls, method, parent):
         handles = {}
         w, h = parent.boundingRect().width(), parent.boundingRect().height()
         for direction in cls.handle_direction:
-            handle = cls(direction, method, parent, finish_method)
+            handle = cls(direction, method, parent)
             x = cls.handle_direction[direction][0] * w
             y = cls.handle_direction[direction][1] * h
             handle.setPos(x, y)
@@ -643,12 +642,21 @@ class ScaleHandle(QGraphicsRectItem):
 
 class GraphicsScene(QGraphicsScene):
     view_transform = pyqtSignal(QTransform)
+    selection_changed = pyqtSignal(object)  # emits hash_id (int) or None
 
     def __init__(self, parent=None, signal=None):
         super().__init__(parent)
         self.signal = signal
         if signal is not None:
             self.signal.connect(self.viewChangeEvent)
+        self.selectionChanged.connect(self._on_selection_changed)
+
+    def _on_selection_changed(self):
+        items = self.selectedItems()
+        if items and hasattr(items[0], 'id'):
+            self.selection_changed.emit(items[0].id)
+        else:
+            self.selection_changed.emit(None)
 
     def addItem(self, item):
         super().addItem(item)
@@ -668,6 +676,19 @@ class GraphicsScene(QGraphicsScene):
 # Base Component Class
 # ============================================================================
 class Component:
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        
+        # 取得子類別原本定義的 __init__
+        original_init = cls.__init__
+
+        @functools.wraps(original_init)
+        def new_init(self, *args, **kwargs):
+            original_init(self, *args, **kwargs)  # 執行原本的初始化
+            self._after_init()                     # 觸發目標方法
+            
+        cls.__init__ = new_init
+
     def init_component(self, attribute: dict, id, parent: QGraphicsScene = None):
         self.parent = parent
         self.start_drag_pos = None
@@ -681,6 +702,9 @@ class Component:
         self.rotate_value = 0
         self.skew_x_value = 0
         self.skew_y_value = 0
+        self._connected_signal=[]
+        self.last_emit={}
+        self.recording=False
         self.controller = SelectionBox(self)
         self.controller.setVisible(False)
         self.connect("Layer", self.order)
@@ -695,6 +719,9 @@ class Component:
         self.connect("Skew Y", self.setLayerTransform)
         self.connect("Rotation", self.setLayerTransform)
 
+    def _after_init(self):
+        del self._connected_signal
+
     def lua_translator(self):
         pass
 
@@ -706,9 +733,11 @@ class Component:
 
     def move_x(self, value):
         self.setPos(float(value), self.y())
+        self.controller.update_scale()
 
     def move_y(self, value):
         self.setPos(self.x(), float(value))
+        self.controller.update_scale()
 
     def gyro(self, value):
         return
@@ -759,9 +788,33 @@ class Component:
     def set_rotate(self,angle):
         self.attribute["Rotation"].emit(angle)
 
+    def record(self,name,value):
+        if self.recording:
+            self.last_emit[name]=value
+            print(name,value)
+
+    def edit_finish(self,method,*args):
+        self.recording=True
+        method(*args)
+        self.recording=False
+        now=1
+        end=len(self.last_emit.items())
+        for key,value in self.last_emit.items():
+            if now==1:
+                self.attribute[key].macro.emit(True)
+            self.attribute[key].edit_finish()
+            self.attribute[key].emit(value)
+            if now==end:
+                self.attribute[key].macro.emit(False)
+            now+=1
+        self.last_emit.clear()
+
     def connect(self, key, method):
         if key in self.attribute:
             self.attribute[key].connect(method)
+            if key not in self._connected_signal:
+                self._connected_signal.append(key)
+                self.attribute[key].connect(lambda v:self.record(key,v))
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.ItemSelectedChange:
@@ -769,11 +822,16 @@ class Component:
 
         if change == QGraphicsItem.ItemSceneChange:
             if value:
+                print(value,change)
                 value.addItem(self.controller)
             else:
-                value.removeItem(self.controller)
+                self.scene().removeItem(self.controller)
         return QGraphicsItem.itemChange(self, change, value)
-
+    
+class Group(Component):
+    #pos offset
+    #
+    pass
 
 class textLayer(Component, QGraphicsTextItem):
     # text
@@ -921,8 +979,8 @@ class textLayer(Component, QGraphicsTextItem):
         self._scale_size = max(1.0, self._scale_size + delta_size)
 
         actual_new = max(1, int(self._scale_size))
-        if actual_new == current_size:
-            return  # sub-integer change; accumulate only, no emit to avoid drift
+        #f actual_new == current_size:
+        #   return  # sub-integer change; accumulate only, no emit to avoid drift
 
         s = actual_new / current_size
         dW = W * (s - 1)
@@ -939,7 +997,6 @@ class textLayer(Component, QGraphicsTextItem):
         self.attribute["Text size"].emit(actual_new)
         self.attribute["X"].emit(self.x() + scene_dpx)
         self.attribute["Y"].emit(self.y() + scene_dpy)
-        self.controller.update_scale()
 
 
 # ============================================================================

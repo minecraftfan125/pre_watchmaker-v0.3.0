@@ -56,6 +56,7 @@ class WatchPreview(QGraphicsView):
         self.id_stack = id_stack
         self.camara_view = QRect(-256, -256, 512, 512)
         self.sence = preview_obj.GraphicsScene(self,self.view_change)
+        self.sence.selection_changed.connect(self.select.emit)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         # 設定固定的場景範圍

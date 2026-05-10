@@ -205,6 +205,7 @@ class Exploror(QWidget):
     paste = pyqtSignal(int)
     cut = pyqtSignal(int)
     delete = pyqtSignal(int)
+    item_selected = pyqtSignal(int)  # emits hash_id
 
     def __init__(self, undo_stack=None, id_stack=None, signal=None, parent=None):
         super().__init__(parent)
@@ -235,6 +236,16 @@ class Exploror(QWidget):
         self.items = {}
 
         self.id_stack = id_stack
+        self.tree.currentItemChanged.connect(self._on_current_item_changed)
+
+    def _on_current_item_changed(self, current, previous):
+        if current and hasattr(current, 'id'):
+            self.item_selected.emit(int(current.id))
+
+    def select_item(self, hash_id):
+        item = self.items.get(str(hash_id))
+        if item:
+            self.tree.setCurrentItem(item)
 
     def sort_change(self, text):
         self.sort_basis = text

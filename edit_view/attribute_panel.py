@@ -39,10 +39,12 @@ class ContainerValueChange(QUndoCommand):
 
     def redo(self):
         self.container.set_value(self.new_value)
+        self.container.signal.emit(self.new_value)
 
     def undo(self):
         print("undo")
         self.container.set_value(self.old_value)
+        self.container.signal.emit(self.old_value)
 
     def __del__(self):
         pass
@@ -71,6 +73,7 @@ class AttributeForm(QScrollArea):
             self.edit_finish=True
             self.undo_stack=None
             self.signal.finish.connect(self.finish)
+            self.signal.macro.connect(self.macro_command)
             self._create_ui()
 
         def _create_ui(self):
@@ -292,6 +295,12 @@ class AttributeForm(QScrollArea):
                     self.push_undo_command(value,old_value)
                     if self.name=="Name":
                         self.signal.emit(self.convert(value))
+
+        def macro_command(self,value):
+            if value:
+                self.undo_stack.beginMacro("Compound edit")
+            else:
+                self.undo_stack.endMacro()
 
         def finish(self):
             self.edit_finish=True
